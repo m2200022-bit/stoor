@@ -189,8 +189,8 @@ tbody tr:hover{background:var(--surface-alt);}
 .empty{padding:40px 20px;text-align:center;color:var(--hint);}
 .empty .ic{font-size:26px;margin-bottom:8px;}
 
-#login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;
-  background:linear-gradient(160deg,var(--primary-dark) 0%,var(--primary) 55%,#0a2f52 100%);position:relative;overflow:hidden}
+#login-screen{position:fixed;inset:0;height:100vh;display:flex;align-items:center;justify-content:center;overflow-y:auto;
+  background:linear-gradient(160deg,var(--primary-dark) 0%,var(--primary) 55%,#0a2f52 100%);z-index:9999}
 #login-screen.hide{display:none}
 .login-card{position:relative;background:var(--surface);border-radius:18px;padding:38px 34px;width:400px;max-width:92vw;
   box-shadow:0 30px 60px rgba(0,0,0,.35);border-top:5px solid var(--coral)}
@@ -271,7 +271,7 @@ const ICONS = {
 function ic(name,size){return `<svg width="${size||16}" height="${size||16}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]||''}</svg>`;}
 
 /* ---------------------- الحالة العامة والبيانات الأولية ---------------------- */
-let seq = {asset:0, loan:0, ret:0, dmg:0, res:0, pr:0, user:6, notif:0, audit:0, broadcast:0, creq:0};
+let seq = {asset:0, loan:0, ret:0, dmg:0, res:0, pr:0, user:6, notif:0, audit:0, broadcast:0, creq:0, cons:0};
 const pad=(n,w=3)=>String(n).padStart(w,'0');
 
 const state = {
@@ -309,6 +309,14 @@ const state = {
   purchaseRequests:[],
   custodyRequests:[],
   custodyReturnRequests:[],
+  purchaseCatalog:{
+    'ضيافة ورحلات':{
+      'احتياجات مشروبات':['كرتون ماء عبوة 250 مل','عبوة أكواب بلاستيك'],
+      'احتياجات رحلات':['كيس صحون بلاستيك صغير','كيس صحون بلاستيك كبير','عبوة أكواب ورقية للشاي','أكياس نفايات','سفرة طعام']
+    },
+    'رياضية':{}
+  },
+  consumableIssues:[],
   notifications:[],
   auditLogs:[]
 };
@@ -329,7 +337,7 @@ const BOX_KEY='main';
 // الحقول المشتركة فقط (بيانات العمل) — أما تسجيل الدخول الحالي والشاشة المفتوحة والفلاتر
 // فتبقى محلية لكل جهاز ولا تُزامَن، حتى لا يتحكم جهاز في جلسة جهاز آخر.
 const SYNC_FIELDS=['orgName','orgLogo','announcement','broadcasts','broadcastReads','roles','clubs','categories','units',
-  'users','assets','loans','returns','damages','reservations','purchaseRequests','custodyRequests','custodyReturnRequests','notifications','auditLogs'];
+  'users','assets','loans','returns','damages','reservations','purchaseRequests','custodyRequests','custodyReturnRequests','purchaseCatalog','consumableIssues','notifications','auditLogs'];
 let _db=null,_root=null,_fbReady=false,_saveT=null,_lastHash=null,_applying=false,_lastKnownTotal=null;
 
 function setSyncBadge(st){
@@ -626,6 +634,12 @@ const NAV = [
     const cu=currentUserObj(); if(!cu) return 0;
     return state.custodyRequests.filter(c=>c.requesterId===cu.id&&c.status==='بانتظار الموافقة').length;
   }},
+  {key:'consumables',label:'المواد الاستهلاكية',icon:'cart',roles:['مدير','أمين مستودع','مسؤول نادي','مستخدم']},
+  {key:'purchase',label:'طلبات الشراء',icon:'cart',roles:['مدير','أمين مستودع','مسؤول نادي','مستخدم'],badge:()=>{
+    const canManage=['مدير','أمين مستودع'].includes(state.currentRole);
+    const cu=currentUserObj();
+    return state.purchaseRequests.filter(p=>p.status==='جديد'&&(canManage||!cu||!cu.clubId||p.clubId===cu.clubId)).length;
+  }},
   {key:'return',label:'إرجاع عهدة',icon:'in',roles:['مدير','أمين مستودع','مسؤول نادي','مستخدم'],badge:()=>{
     const canManage=['مدير','أمين مستودع'].includes(state.currentRole);
     if(canManage) return state.custodyReturnRequests.filter(r=>r.status==='بانتظار الموافقة').length;
@@ -637,11 +651,6 @@ const NAV = [
     const canManage=['مدير','أمين مستودع'].includes(state.currentRole);
     const cu=currentUserObj();
     return state.reservations.filter(r=>r.status==='نشط'&&(canManage||!cu||!cu.clubId||r.clubId===cu.clubId)).length;
-  }},
-  {key:'purchase',label:'طلبات الشراء',icon:'cart',roles:['مدير','أمين مستودع','مسؤول نادي','مستخدم'],badge:()=>{
-    const canManage=['مدير','أمين مستودع'].includes(state.currentRole);
-    const cu=currentUserObj();
-    return state.purchaseRequests.filter(p=>p.status==='جديد'&&(canManage||!cu||!cu.clubId||p.clubId===cu.clubId)).length;
   }},
   {key:'purchaseApproval',label:'اعتماد طلبات الشراء',icon:'check',roles:['مدير','أمين مستودع'],badge:()=>state.purchaseRequests.filter(p=>!['تم الشراء','محول إلى أصل','محول إلى أصل استهلاكي','محول إلى عهدة','محول إلى عهدة راجعة','ملغي','مرفوض','fullyEntered'].includes(p.status)||( p.status==='تم الشراء'&&p.processingStatus!=='fullyEntered')).length},
   {key:'users',label:'المستخدمون',icon:'users',roles:['مدير'],badge:()=>state.users.filter(u=>u.status==='pending').length},
@@ -669,6 +678,7 @@ function closeModal(){state.modal=null; render();}
 /* ---------------------- دالة العرض الرئيسية ---------------------- */
 function renderLoginScreen(){
   document.getElementById('app').innerHTML='';
+  document.body.style.overflow='hidden';
   const ls=document.getElementById('login-screen');
   ls.classList.remove('hide');
   ls.innerHTML=`
@@ -697,7 +707,7 @@ function doLogin(){
   if(u.password!==pass){errEl.textContent='كلمة المرور غير صحيحة';errEl.style.display='block';return;}
   state.currentUser=u.username;
   state.currentRole=u.role;
-  document.getElementById('login-screen').classList.add('hide');
+  document.getElementById('login-screen').classList.add('hide'); document.body.style.overflow='';
   render();
   checkAndShowBroadcasts();
 }
@@ -764,7 +774,7 @@ function submitChangePassword(){
 }
 function render(){
   if(!state.currentUser){renderLoginScreen();return;}
-  document.getElementById('login-screen').classList.add('hide');
+  document.getElementById('login-screen').classList.add('hide'); document.body.style.overflow='';
   const app=document.getElementById('app');
   const role=state.currentRole;
   const pendingUsersCount=state.users.filter(u=>u.status==='pending').length;
@@ -819,7 +829,7 @@ function render(){
       </div>
       <div class="role-switch" style="margin-right:0;">
         <span class="pill teal" style="cursor:pointer;" onclick="openChangePasswordModal()" title="تغيير كلمة المرور">${cu?escapeHtml(cu.fullName):''} — ${role}</span>
-        <button class="btn secondary sm" onclick="doLogout()">${ic('x',13)} تسجيل خروج</button>
+        <button class="btn danger sm" onclick="doLogout()">${ic('x',13)} تسجيل خروج</button>
       </div>
       <button class="bell" onclick="softRefresh(this)" title="تحديث دون الخروج من البرنامج" style="border:1px solid var(--border);">
         <span class="refresh-ic" style="display:flex;">${ic('log',17)}</span>
@@ -844,6 +854,7 @@ function render(){
     else if(state.view==='reports') body=renderReports();
     else if(state.view==='notifications') body=renderNotifications();
     else if(state.view==='myRequests') body=renderMyRequests();
+    else if(state.view==='consumables') body=renderConsumables();
   }catch(e){ body=`<div class="empty">تعذر عرض هذا القسم: ${escapeHtml(e.message)}</div>`; }
 
   app.innerHTML = sidebar + `<div class="main">${topbar}<div class="content">${body}</div></div>` + (state.modal||'');
@@ -1049,7 +1060,7 @@ function renderAssets(){
     <div class="section-head">
       <div><h2>سجل الأصول الثابتة</h2><p>${filtered.length} من ${fixedAssetsOnly.length} صنفًا مسجلاً في المستودعات</p></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn secondary" onclick="printAssetsReport()">${ic('printer',15)} طباعة تقرير المخزون بالباركود</button>
+        <button class="btn secondary" onclick="openBarcodePrintOptionsModal()">${ic('printer',15)} طباعة باركود الأصول</button>
         ${canManage?`<button class="btn secondary" onclick="openCatUnitModal()">${ic('layers',15)} التصنيفات والوحدات</button>`:''}
         ${canManage?`<button class="btn" onclick="openAddAssetModal()">${ic('plus',15)} إضافة أصل ثابت</button>`:''}
       </div>
@@ -1087,10 +1098,53 @@ function renderAssets(){
       </table>
     </div>`;
 }
-function printAssetsReport(){
-  const f=state.assetFilter;
+function openBarcodePrintOptionsModal(){
+  const shelves=[...new Set(state.assets.filter(a=>a.category!=='مواد استهلاكية'&&a.shelf&&a.shelf!=='—').map(a=>a.shelf))];
+  const cats=state.categories.filter(c=>c!=='مواد استهلاكية');
+  openModal(`
+    <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal" style="max-width:420px;">
+        <div class="mhead"><h3>${ic('printer',16)} طباعة باركود الأصول</h3><button class="x-close" onclick="closeModal()">${ic('x',15)}</button></div>
+        <div class="mbody">
+          <div class="field"><label>نطاق الطباعة</label>
+            <select id="bp-mode" onchange="document.getElementById('bp-shelf-wrap').style.display=this.value==='shelf'?'block':'none';document.getElementById('bp-cat-wrap').style.display=this.value==='cat'?'block':'none';">
+              <option value="all">جميع الأصول الثابتة</option>
+              <option value="shelf">حسب الرف</option>
+              <option value="cat">حسب الصنف (التصنيف)</option>
+            </select>
+          </div>
+          <div class="field" id="bp-shelf-wrap" style="display:none;"><label>اختر الرف</label>
+            <select id="bp-shelf">${shelves.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('')||'<option value="">لا توجد أرفف مسجّلة</option>'}</select>
+          </div>
+          <div class="field" id="bp-cat-wrap" style="display:none;"><label>اختر الصنف</label>
+            <select id="bp-cat">${cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="mfoot">
+          <button class="btn" onclick="submitBarcodePrint()">${ic('printer',15)} طباعة</button>
+          <button class="btn secondary" onclick="closeModal()">إلغاء</button>
+        </div>
+      </div>
+    </div>`);
+}
+function submitBarcodePrint(){
+  const mode=document.getElementById('bp-mode').value;
+  closeModal();
+  if(mode==='shelf'){
+    const shelf=document.getElementById('bp-shelf')?document.getElementById('bp-shelf').value:'';
+    printAssetsReport(shelf?{shelf}:{});
+  } else if(mode==='cat'){
+    const cat=document.getElementById('bp-cat').value;
+    printAssetsReport(cat?{cat}:{});
+  } else {
+    printAssetsReport({});
+  }
+}
+function printAssetsReport(overrideFilter){
+  const f=overrideFilter||state.assetFilter;
   const list=state.assets.filter(a=>{
     if(a.category==='مواد استهلاكية')return false;
+    if(f.shelf&&a.shelf!==f.shelf)return false;
     if(f.cat&&a.category!==f.cat)return false;
     if(f.unit&&a.unit!==f.unit)return false;
     if(f.q&&!(a.name.toLowerCase().includes(f.q.toLowerCase())||a.code.toLowerCase().includes(f.q.toLowerCase())))return false;
@@ -1402,6 +1456,137 @@ function returnUrgency(l){
   if(days<=3)return {label:'⏳ يقترب موعد الاستلام',cls:'amber'};
   return null;
 }
+function renderConsumables(){
+  const canManage=['مدير','أمين مستودع'].includes(state.currentRole);
+  const cu=currentUserObj();
+  const stock=state.assets.filter(a=>a.category==='مواد استهلاكية');
+  const myLog=canManage?state.consumableIssues:state.consumableIssues.filter(c=>!cu||!cu.clubId||c.clubId===cu.clubId);
+  return `
+    <div class="note-banner">${ic('cart',15)} المواد الاستهلاكية لا تُسجَّل كعهدة ولا تحتاج إرجاعًا — بمجرد إخراجها تُعتبر مصروفة ومُغلقة الحركة مباشرة.</div>
+    <div class="section-head">
+      <div><h2>المواد الاستهلاكية</h2><p>${stock.length} صنف مسجّل بالمخزون</p></div>
+      <button class="btn" style="background:var(--coral);color:#fff;" onclick="openConsumableIssueModal()">${ic('out',15)} إخراج مواد استهلاكية</button>
+    </div>
+    <div class="table-wrap card table-ruled" style="margin-bottom:24px;">
+      <table>
+        <thead><tr><th>رقم الصنف</th><th>اسم الصنف</th><th>الرصيد الكلي</th><th>المتاح بالمخزون</th><th>صُرف كعهد مستهلكة</th><th>الموقع</th></tr></thead>
+        <tbody>${stock.map(a=>`<tr><td style="font-weight:700;color:var(--muted);font-size:12px;">${a.code}</td><td style="font-weight:700;">${escapeHtml(a.name)}</td><td>${a.qtyTotal} ${a.unit}</td><td>${a.qtyAvailable} ${a.unit}</td><td>${a.qtyLoaned} ${a.unit}</td><td>${escapeHtml(a.location)}</td></tr>`).join('')||`<tr><td colspan="6" class="empty">لا توجد مواد استهلاكية مسجّلة بعد</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div class="section-head"><div><h2>سجل الإخراج</h2><p>${myLog.length} عملية إخراج</p></div></div>
+    <div class="table-wrap card table-ruled">
+      <table>
+        <thead><tr><th>رقم العملية</th><th>الأصناف</th><th>المستلم</th><th>النادي</th><th>التاريخ</th></tr></thead>
+        <tbody>${myLog.slice().reverse().map(c=>`<tr><td style="font-weight:700;">${c.number}</td><td>${c.items.map(it=>escapeHtml(it.name)+' ('+it.qty+')').join('، ')}</td><td>${escapeHtml(c.requester)}</td><td>${escapeHtml(findClub(c.clubId)?.name||'—')}</td><td>${c.date} ${c.time}</td></tr>`).join('')||`<tr><td colspan="5" class="empty">لا توجد عمليات إخراج بعد</td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
+let consItems=[];
+function openConsumableIssueModal(){
+  consItems=[];
+  const cu=currentUserObj();
+  openModal(`
+    <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal">
+        <div class="mhead"><h3>إخراج مواد استهلاكية</h3><button class="x-close" onclick="closeModal()">${ic('x',15)}</button></div>
+        <div class="mbody">
+          ${cu?`<div class="note-banner">${ic('cart',15)} سيُسجَّل الإخراج باسم ${escapeHtml(cu.fullName)} — نادي ${escapeHtml(findClub(cu.clubId)?.name||'—')}. لن تُسجَّل كعهدة ولا تحتاج إرجاعًا.</div>`:''}
+          <div class="form-grid">
+            <div class="field"><label>نوع الطلب</label>
+              <select id="ci-type" onchange="refreshConsumableSubtypesUI()">
+                ${Object.keys(state.purchaseCatalog).map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div id="ci-subtypes-ui"></div>
+          <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
+          <h4 style="margin:0 0 8px 0;">الأصناف المحددة للإخراج</h4>
+          <div id="ci-items-ui"></div>
+        </div>
+        <div class="mfoot">
+          <button class="btn" style="background:var(--coral);color:#fff;" onclick="submitConsumableIssue()">${ic('check',15)} تأكيد الإخراج</button>
+          <button class="btn secondary" onclick="closeModal()">إلغاء</button>
+        </div>
+      </div>
+    </div>`);
+  refreshConsumableSubtypesUI();
+}
+function refreshConsumableSubtypesUI(){
+  const type=document.getElementById('ci-type').value;
+  const subtypes=state.purchaseCatalog[type]||{};
+  const names=Object.keys(subtypes);
+  document.getElementById('ci-subtypes-ui').innerHTML=`
+    <div class="field"><label>نوع الصنف</label>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        ${names.map(n=>`<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;background:var(--surface-alt);padding:6px 10px;border-radius:8px;cursor:pointer;">
+          <input type="checkbox" class="ci-subtype-check" value="${escapeHtml(n)}" style="width:auto;" onchange="refreshConsumableItemsUI()"> ${escapeHtml(n)}
+        </label>`).join('')||'<span class="hint">لا توجد أنواع أصناف لهذا النوع بعد.</span>'}
+      </div>
+    </div>
+    <div id="ci-catalog-items-ui"></div>`;
+  refreshConsumableItemsUI();
+}
+function refreshConsumableItemsUI(){
+  const type=document.getElementById('ci-type').value;
+  const checked=[...document.querySelectorAll('.ci-subtype-check:checked')].map(c=>c.value);
+  const subtypes=state.purchaseCatalog[type]||{};
+  const wrap=document.getElementById('ci-catalog-items-ui');
+  if(!checked.length){ wrap.innerHTML=''; return; }
+  wrap.innerHTML=checked.map(subName=>{
+    const items=subtypes[subName]||[];
+    return `<div class="card" style="padding:10px 12px;margin-top:8px;">
+      <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;">${escapeHtml(subName)}</div>
+      ${items.map(it=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <label style="display:flex;align-items:center;gap:6px;flex:1;font-size:12.5px;cursor:pointer;">
+          <input type="checkbox" class="ci-item-check" data-item="${escapeHtml(it)}" style="width:auto;"> ${escapeHtml(it)}
+        </label>
+        <input type="number" min="1" value="1" class="ci-item-qty" style="width:80px;" placeholder="العدد">
+      </div>`).join('')||'<span class="hint">لا توجد أصناف هنا بعد.</span>'}
+    </div>`;
+  }).join('')+`<button type="button" class="btn sm" style="margin-top:10px;background:var(--coral);color:#fff;" onclick="addSelectedConsumableItems()">${ic('plus',13)} إضافة المحدد للإخراج</button>`;
+}
+function addSelectedConsumableItems(){
+  const rows=[...document.querySelectorAll('.ci-item-check:checked')];
+  if(!rows.length){alert('اختر صنفًا واحدًا على الأقل');return;}
+  rows.forEach(cb=>{
+    const wrap=cb.closest('div');
+    const qty=parseInt(wrap.querySelector('.ci-item-qty').value)||1;
+    consItems.push({name:cb.dataset.item,qty});
+  });
+  refreshConsItemsListUI();
+}
+function refreshConsItemsListUI(){
+  document.getElementById('ci-items-ui').innerHTML=consItems.map((it,i)=>`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+      <span style="flex:1;font-size:12.5px;">${escapeHtml(it.name)}</span>
+      <span class="pill teal">${it.qty}</span>
+      <button class="btn sm danger" onclick="consItems.splice(${i},1);refreshConsItemsListUI()">${ic('x',12)}</button>
+    </div>`).join('')||'<div class="empty">لم تُضَف أصناف بعد</div>';
+}
+function submitConsumableIssue(){
+  if(!consItems.length){alert('أضف صنفًا واحدًا على الأقل قبل التأكيد');return;}
+  const cu=currentUserObj();
+  const requester=cu?cu.fullName:state.currentRole;
+  const clubId=cu?cu.clubId:null;
+  consItems.forEach(it=>{
+    let a=state.assets.find(x=>x.name===it.name&&x.category==='مواد استهلاكية');
+    if(a){
+      a.qtyLoaned=(a.qtyLoaned||0)+it.qty;
+      if(a.qtyAvailable>=it.qty) a.qtyAvailable-=it.qty; else a.qtyAvailable=0;
+    } else {
+      seq.asset++;
+      state.assets.push({id:seq.asset, code:'AST-'+pad(seq.asset,3), name:it.name, category:'مواد استهلاكية',
+        unit:'قطعة', qtyTotal:it.qty, qtyOriginal:it.qty, qtyAvailable:0, qtyLoaned:it.qty, qtyDamaged:0, qtyReserved:0,
+        location:'مستودع المواد الاستهلاكية', shelf:'—', col:'—', entryDate:todayStr(), condition:'جديد'});
+    }
+  });
+  seq.cons++;
+  state.consumableIssues.push({id:seq.cons, number:'CS-'+pad(seq.cons,4), items:consItems.slice(), requester, clubId, date:todayStr(),
+    time:(()=>{const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0');})()});
+  addAudit(requester,'إخراج مواد استهلاكية','consumable_issues','CS-'+pad(seq.cons,4));
+  addNotification('loan',`تم إخراج مواد استهلاكية (${consItems.length} صنف) بواسطة ${requester}`);
+  closeModal();render();
+}
 function renderIssue(){
   const ui=state.issueUI;
   const canManage=['مدير','أمين مستودع'].includes(state.currentRole);
@@ -1420,6 +1605,7 @@ function renderIssue(){
     return `<tr>
       <td><input type="checkbox" class="issue-check" value="${l.id}"></td>
       <td style="font-weight:700;">${l.number}</td>
+      <td style="font-weight:700;color:var(--muted);font-size:12px;">${a?a.code:'—'}</td>
       <td>${escapeHtml(a?a.name:'—')}<div style="color:var(--hint);font-size:11px;">${escapeHtml(a?a.category:'')}</div></td>
       <td><a href="javascript:void(0)" onclick="openBeneficiarySheet('${escapeHtml(l.recipient)}')" style="color:var(--primary);font-weight:700;text-decoration:underline;">${escapeHtml(l.recipient)}</a><div style="color:var(--hint);font-size:11.5px;">${escapeHtml(club?club.name:'')}</div></td>
       <td>${l.qty}</td>
@@ -1461,6 +1647,7 @@ function renderIssue(){
         ${canManage?`<button class="btn secondary" onclick="openBulkPrintByUserModal()">${ic('printer',15)} طباعة مجمّعة حسب المستخدم</button>`:''}
         <button class="btn secondary" onclick="printSelectedConsolidated()">${ic('printer',15)} طباعة المحدد كسند واحد</button>
         <button class="btn secondary" onclick="printAllIssueRecords()">${ic('printer',15)} طباعة شاملة لكل السجلات</button>
+        <button class="btn secondary" onclick="navigate('consumables')" style="background:var(--coral);color:#fff;">${ic('cart',15)} إخراج مواد استهلاكية</button>
         <button class="btn" onclick="openIssueModal()">${ic('plus',15)} ${canManage?'إخراج عهدة جديدة':'طلب إخراج عهدة'}</button>
       </div>
     </div>
@@ -1473,8 +1660,8 @@ function renderIssue(){
     </div>
     <div class="table-wrap card table-ruled">
       <table>
-        <thead><tr><th></th><th>رقم العملية</th><th>الأصل</th><th>المستلم</th><th>العدد</th><th>نوع العهدة</th><th>تاريخ الخروج</th><th>الإرجاع المتوقع</th><th>الحالة</th><th>إجراء</th></tr></thead>
-        <tbody>${rows||`<tr><td colspan="10" class="empty">لا توجد عهد مطابقة</td></tr>`}</tbody>
+        <thead><tr><th></th><th>رقم العملية</th><th>رقم الأصل</th><th>الأصل</th><th>المستلم</th><th>العدد</th><th>نوع العهدة</th><th>تاريخ الخروج</th><th>الإرجاع المتوقع</th><th>الحالة</th><th>إجراء</th></tr></thead>
+        <tbody>${rows||`<tr><td colspan="11" class="empty">لا توجد عهد مطابقة</td></tr>`}</tbody>
       </table>
     </div>`;
 }
@@ -1514,21 +1701,18 @@ function submitConsumableWaste(loanId){
 }
 function approveCustodyRequest(id){
   const c=state.custodyRequests.find(x=>x.id===id); if(!c) return;
-  for(const it of c.items){
-    const a=findAsset(it.assetId);
-    if(!a||it.qty>a.qtyAvailable){ alert(`تعذّرت الموافقة — الكمية المتاحة من "${a?a.name:'الصنف'}" لم تعد كافية (متاح: ${a?a.qtyAvailable:0}).`); return; }
-  }
   const approvedBy=currentUserObj()?.fullName||state.currentRole;
   const groupNo='AS-'+pad(seq.loan+1,4);
   c.items.forEach(it=>{
     const a=findAsset(it.assetId);
-    a.qtyAvailable-=it.qty; a.qtyLoaned+=it.qty;
+    // الكمية مخصومة أصلاً من "المتاح" وموضوعة في "محجوز" منذ تقديم الطلب — الآن تتحول إلى "معار"
+    a.qtyReserved=Math.max(0,(a.qtyReserved||0)-it.qty); a.qtyLoaned+=it.qty;
     seq.loan++;
     state.loans.push({
       id:seq.loan, number:'AS-'+pad(seq.loan,4), groupNumber:groupNo, assetId:a.id, clubId:c.clubId,
       recipient:c.requester, phone:(state.users.find(u=>u.id===c.requesterId)||{}).phone,
       qty:it.qty, issueDate:c.issueDate, expectedReturn:c.expectedReturn, status:'نشطة', createdBy:approvedBy,
-      overrideNote:c.overrideNote||undefined
+      overrideNote:c.overrideNote||undefined, sourceRequestNumber:c.number
     });
   });
   c.status='موافق عليه'; c.approvedBy=approvedBy; c.approvedDate=todayStr(); c.resultGroup=groupNo;
@@ -1541,6 +1725,11 @@ function rejectCustodyRequest(id){
   const reason=prompt('سبب رفض طلب إخراج العهدة '+c.number+':',''); 
   if(reason===null) return;
   if(!reason.trim()){alert('يجب ذكر سبب الرفض');return;}
+  // إعادة الكمية المحجوزة إلى "المتاح" بعد الرفض
+  c.items.forEach(it=>{
+    const a=findAsset(it.assetId);
+    if(a){ a.qtyReserved=Math.max(0,(a.qtyReserved||0)-it.qty); a.qtyAvailable+=it.qty; }
+  });
   c.status='مرفوض'; c.rejectReason=reason.trim(); c.approvedBy=currentUserObj()?.fullName||state.currentRole; c.approvedDate=todayStr();
   addNotification('loan',`تم رفض طلب إخراج العهدة ${c.number} — السبب: ${c.rejectReason}`);
   addAudit(c.approvedBy,'رفض طلب إخراج عهدة — السبب: '+c.rejectReason,'custody_requests',c.number);
@@ -1618,7 +1807,19 @@ function printBeneficiarySheet(recipient){
     th{background:#0B3B6B;color:#fff;padding:8px;border:1px solid #08294f}
     td{padding:7px 8px;border:1px dashed #9fb3c4;text-align:center}
     tr:nth-child(even) td{background:#F5F7FA}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div class="org">${escapeHtml(state.orgName)}</div></div>
     <div class="title">📋 كشف عهدة موحّد — ${escapeHtml(recipient)}</div>
@@ -1720,7 +1921,19 @@ function printConsolidatedVoucher(items,rangeMeta){
     .sign{display:flex;justify-content:space-between;margin-top:40px;font-size:12px;}
     .sign div{width:220px;border-top:1.5px solid #444;padding-top:6px;text-align:center}
     .ftr{margin-top:26px;border-top:1.5px solid #0B3B6B;padding-top:8px;display:flex;justify-content:space-between;font-size:9.5px;color:#5B6A78}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div><div class="org">${escapeHtml(state.orgName)}</div><div class="org-sub">ASSET &amp; CUSTODY MANAGEMENT SYSTEM</div></div></div>
     <div class="title">📤 سند عهدة مجمّع</div>
@@ -1773,7 +1986,19 @@ function printAllIssueRecords(){
     th{background:#0B3B6B;color:#fff;padding:8px;border:1px solid #08294f}
     td{padding:7px 8px;border:1px dashed #9fb3c4;text-align:center}
     tr:nth-child(even) td{background:#F5F7FA}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div class="org">${escapeHtml(state.orgName)}</div></div>
     <div class="title">📤 تقرير شامل — سجل العهد الخارجة (${list.length} سجل)</div>
@@ -1842,7 +2067,19 @@ function printIssueVoucher(groupNumber){
     .sign{display:flex;justify-content:space-between;margin-top:40px;font-size:12px;}
     .sign div{width:220px;border-top:1.5px solid #444;padding-top:6px;text-align:center}
     .ftr{margin-top:26px;border-top:1.5px solid #0B3B6B;padding-top:8px;display:flex;justify-content:space-between;font-size:9.5px;color:#5B6A78}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div><div class="org">${escapeHtml(state.orgName)}</div><div class="org-sub">ASSET &amp; CUSTODY MANAGEMENT SYSTEM</div></div></div>
     <div class="title">📤 سند خروج أصل ثابت</div>
@@ -2001,6 +2238,11 @@ function submitIssue(){
 
   if(!canManage){
     // طلب إخراج عهدة من مستخدم عادي — يحتاج موافقة المدير قبل أن يصبح عهدة فعلية
+    // نخصم الكمية من "المتاح" فورًا حتى لا يُحجز نفس الأصل لطلب آخر أثناء انتظار الموافقة
+    validItems.forEach(it=>{
+      const a=findAsset(parseInt(it.assetId));
+      a.qtyAvailable-=it.qty; a.qtyReserved=(a.qtyReserved||0)+it.qty;
+    });
     seq.creq++;
     const now=new Date();
     state.custodyRequests.push({
@@ -2011,8 +2253,8 @@ function submitIssue(){
     });
     addNotification('loan',`طلب إخراج عهدة جديد من ${recipient.fullName} بانتظار موافقة المدير`);
     addAudit(createdBy,'طلب إخراج عهدة (بانتظار الموافقة)','custody_requests','CR-'+pad(seq.creq,4));
-    closeModal();
-    alert('تم إرسال طلبك لإخراج العهدة، وهو الآن بانتظار موافقة المدير أو أمين المستودع. يمكنك متابعة حالته من صفحة "طلباتي".');
+    closeModal();render();
+    alert('تم إرسال طلبك لإخراج العهدة، وهو الآن بانتظار موافقة المدير أو أمين المستودع. تم حجز الكمية من المخزون مؤقتًا لحين البتّ في الطلب. يمكنك متابعة حالته من صفحة "طلباتي".');
     return;
   }
 
@@ -2055,19 +2297,26 @@ function renderReturn(){
   }).reverse().map(([g,items])=>{
     const first=items[0];
     const club=findClub(first.clubId);
-    const itemsText=items.map(l=>{const a=findAsset(l.assetId);return `${a?a.name:'—'} (${l.qty})`;}).join('، ');
+    const itemsText=items.map(l=>{const a=findAsset(l.assetId);return `${a?a.name:'—'}${a?' ('+a.code+')':''} (${l.qty})`;}).join('، ');
     const pending=items.some(l=>l.status==='نشطة'||l.status==='متأخرة'||l.status==='مرجعة جزئياً');
     const hasPendingReturnReq=items.some(l=>l.pendingReturnRequestId);
+    const issueReqNum=first.sourceRequestNumber||'—';
+    const retReqNum=(()=>{
+      const rr=state.custodyReturnRequests.find(r=>r.items.some(p=>items.some(l=>l.id===p.loanId)));
+      return rr?rr.number:(hasPendingReturnReq?'—':'—');
+    })();
     return `<tr>
       <td><input type="checkbox" class="ret-check" value="${g}"></td>
       <td style="font-weight:700;">${g}</td>
       <td>${itemsText}</td>
+      <td>${issueReqNum}</td>
+      <td>${retReqNum}</td>
       <td>${escapeHtml(first.recipient)}<div style="color:var(--hint);font-size:11.5px;">${escapeHtml(club?club.name:'')}</div></td>
       <td>${first.issueDate}</td>
       <td>${items.length>1?`<span class="pill teal">${items.length} أصناف</span>`:''}${hasPendingReturnReq?'<span class="pill amber">بانتظار موافقة الاسترجاع</span>':(pending?loanStatusPill(items.find(l=>l.status!=='مرجعة بالكامل')):'<span class="pill green">مُرجَع</span>')}</td>
       <td style="display:flex;gap:4px;flex-wrap:wrap;">
         ${(pending&&!hasPendingReturnReq)?`<button class="btn sm secondary" onclick="openReturnGroupModal('${g}')">${ic('in',13)} إرجاع</button>`:''}
-        ${(canManage&&items.some(l=>state.returns.some(r=>r.loanId===l.id)))?`<button class="btn sm secondary" onclick="undoLastReturn('${g}')" title="التراجع عن آخر إرجاع — قد يكون الإرجاع خطأ">${ic('x',13)} تراجع عن الإرجاع</button>`:''}
+        ${(canManage&&items.some(l=>state.returns.some(r=>r.loanId===l.id))&&!isReturnUndoExpired(items))?`<button class="btn sm secondary" onclick="undoLastReturn('${g}')" title="التراجع عن آخر إرجاع — قد يكون الإرجاع خطأ">${ic('x',13)} تراجع عن الإرجاع</button>`:''}
         <button class="btn sm secondary" onclick="printReturnVoucher('${g}')" title="طباعة سند الإرجاع">${ic('printer',13)}</button>
         ${(pending&&canManage)?`<button class="btn sm danger" onclick="deleteLoanGroup('${g}')">${ic('x',13)}</button>`:''}
       </td>
@@ -2086,12 +2335,25 @@ function renderReturn(){
     </tr>`;
   }).join('');
   return `
-    ${pendingRR.length?`
-    <div class="section-head" style="margin-bottom:10px;"><div><h2>طلبات استرجاع عهدة بانتظار الموافقة</h2><p>${pendingRR.length} طلب</p></div></div>
+    ${(pendingRR.length||canManage)?`
+    <div class="section-head" style="margin-bottom:10px;"><div><h2>طلبات استرجاع عهدة</h2><p>${pendingRR.length} طلب بانتظار الموافقة</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <select id="rr-period" onchange="applyRRPeriod(this.value)" style="padding:6px 10px;font-size:12px;">
+          <option value="">فترة مخصّصة</option>
+          <option value="month">آخر شهر</option>
+          <option value="2months">آخر شهرين</option>
+          <option value="year">آخر سنة</option>
+        </select>
+        <input type="date" id="rr-from" value="${state.rrPrintRange?.from||''}" onchange="state.rrPrintRange=state.rrPrintRange||{};state.rrPrintRange.from=this.value" style="padding:6px 8px;font-size:12px;">
+        <span class="hint">إلى</span>
+        <input type="date" id="rr-to" value="${state.rrPrintRange?.to||''}" onchange="state.rrPrintRange=state.rrPrintRange||{};state.rrPrintRange.to=this.value" style="padding:6px 8px;font-size:12px;">
+        <button class="btn secondary sm" onclick="printCustodyReturnRequests()">${ic('printer',13)} طباعة</button>
+      </div>
+    </div>
     <div class="table-wrap card table-ruled" style="margin-bottom:22px;">
       <table>
         <thead><tr><th>رقم الطلب</th><th>المستخدم</th><th>الأصناف</th><th>تاريخ الطلب</th><th>إجراء</th></tr></thead>
-        <tbody>${rrRows}</tbody>
+        <tbody>${rrRows||`<tr><td colspan="5" class="empty">لا توجد طلبات استرجاع بانتظار الموافقة</td></tr>`}</tbody>
       </table>
     </div>`:''}
     <div class="note-banner">${ic('in',15)} إذا كانت العهدة تضم أكثر من صنف (أُخرجت في نفس الطلب)، تُرجَع كل الأصناف معاً في عملية واحدة. أدخل العدد الراجع والعدد التالف إن وُجد — التلفيات تُنشئ طلب اعتماد للمدير تلقائياً. ${!canManage?'طلبات الاسترجاع التي تقدّمها تحتاج موافقة المدير قبل أن يعود الأصل للمخزون.':''}</div>
@@ -2109,8 +2371,8 @@ function renderReturn(){
     </div>
     <div class="table-wrap card table-ruled">
       <table>
-        <thead><tr><th></th><th>رقم العملية</th><th>الأصناف</th><th>المستلم</th><th>تاريخ الخروج</th><th>الحالة</th><th>إجراء</th></tr></thead>
-        <tbody>${rows||`<tr><td colspan="7" class="empty">لا توجد عهد ضمن هذا الفلتر</td></tr>`}</tbody>
+        <thead><tr><th></th><th>رقم العملية</th><th>الأصناف</th><th>رقم طلب الإخراج</th><th>رقم طلب الاسترجاع</th><th>المستلم</th><th>تاريخ الخروج</th><th>الحالة</th><th>إجراء</th></tr></thead>
+        <tbody>${rows||`<tr><td colspan="9" class="empty">لا توجد عهد ضمن هذا الفلتر</td></tr>`}</tbody>
       </table>
     </div>`;
 }
@@ -2125,6 +2387,15 @@ function printSelectedReturnGroups(){
   }
   printConsolidatedVoucher(items);
 }
+function isReturnUndoExpired(items){
+  let latestDate=null;
+  items.forEach(l=>{
+    state.returns.filter(r=>r.loanId===l.id).forEach(r=>{ if(!latestDate||r.date>latestDate) latestDate=r.date; });
+  });
+  if(!latestDate) return false;
+  const days=Math.floor((new Date(todayStr())-new Date(latestDate))/86400000);
+  return days>5;
+}
 function undoLastReturn(groupNumber){
   if(!['مدير','أمين مستودع'].includes(state.currentRole)){alert('هذا الإجراء متاح فقط لمدير النظام أو أمين المستودع');return;}
   const items=state.loans.filter(l=>(l.groupNumber||l.number)===groupNumber);
@@ -2133,6 +2404,7 @@ function undoLastReturn(groupNumber){
     state.returns.filter(r=>r.loanId===l.id).forEach(r=>{ if(!latestDate||r.date>latestDate) latestDate=r.date; });
   });
   if(!latestDate){alert('لا يوجد إرجاع سابق لهذه العهدة');return;}
+  if(Math.floor((new Date(todayStr())-new Date(latestDate))/86400000)>5){alert('انتهت مهلة التراجع عن الإرجاع (5 أيام من تاريخ آخر إرجاع)');return;}
   if(!confirm('هل تريد التراجع عن آخر عملية إرجاع بتاريخ '+latestDate+'؟ سيتم إلغاء الكميات والتلفيات المرتبطة بها (إن لم تُعتمَد بعد).'))return;
   let blocked=false;
   items.forEach(l=>{
@@ -2186,8 +2458,9 @@ function printAllReturns(){
     const totalRet=items.reduce((s,l)=>s+state.returns.filter(r=>r.loanId===l.id).reduce((s2,r)=>s2+r.qtyReturned,0),0);
     const totalDmg=items.reduce((s,l)=>s+state.returns.filter(r=>r.loanId===l.id).reduce((s2,r)=>s2+r.qtyDamaged,0),0);
     const pending=items.some(l=>l.status==='نشطة'||l.status==='متأخرة'||l.status==='مرجعة جزئياً');
-    const statusText=pending?items.find(l=>l.status!=='مرجعة بالكامل').status:'مُرجَع بالكامل';
-    return `<tr><td>${g}</td><td>${escapeHtml(itemsText)}</td><td>${escapeHtml(first.recipient)}</td><td>${escapeHtml(club?club.name:'—')}</td><td>${first.issueDate}</td><td>${totalOut}</td><td>${totalRet}</td><td>${totalDmg}</td><td>${statusText}</td></tr>`;
+    const statusText=totalRet<=0?'لم تُرجَع بعد':(pending?'مسترجعة بنواقص':'مسترجعة بالكامل');
+    const lastReturnDate=items.flatMap(l=>state.returns.filter(r=>r.loanId===l.id)).sort((a,b)=>a.date>b.date?1:-1).slice(-1)[0]?.date||'—';
+    return `<tr><td>${g}</td><td>${escapeHtml(itemsText)}</td><td>${escapeHtml(first.recipient)}</td><td>${escapeHtml(club?club.name:'—')}</td><td>${first.issueDate}</td><td>${totalOut}</td><td>${totalRet}</td><td>${totalDmg}</td><td>${statusText}</td><td>${lastReturnDate}</td></tr>`;
   }).join('');
   const w=window.open('','_blank'); if(!w){alert('الرجاء السماح بفتح النوافذ المنبثقة للطباعة');return;}
   w.document.write(`<html dir="rtl"><head><meta charset="UTF-8"><title>تقرير شامل — الإرجاعات</title>
@@ -2204,11 +2477,23 @@ function printAllReturns(){
     th{background:#1B5FA6;color:#fff;padding:8px;border:1px solid #0B3B6B}
     td{padding:7px 8px;border:1px solid #cfd9e2;text-align:center}
     tr:nth-child(even) td{background:#F5F7FA}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div class="org">${escapeHtml(state.orgName)}</div></div>
     <div class="title">📥 تقرير شامل — سجل خروج وإرجاع العهد</div>
-    <table><thead><tr><th>رقم العملية</th><th>الأصناف</th><th>المستلم</th><th>النادي</th><th>تاريخ الخروج</th><th>الخارج</th><th>المُرجَع</th><th>التالف</th><th>الحالة</th></tr></thead>
+    <table><thead><tr><th>رقم العملية</th><th>الأصناف</th><th>المستلم</th><th>النادي</th><th>تاريخ الخروج</th><th>الخارج</th><th>المُرجَع</th><th>التالف</th><th>الحالة</th><th>تاريخ الاسترجاع</th></tr></thead>
     <tbody>${rows||'<tr><td colspan="9">لا توجد بيانات</td></tr>'}</tbody></table>
   </div><script>window.onload=()=>window.print();<\/script></body></html>`);
   w.document.close();
@@ -2425,6 +2710,65 @@ function rejectCustodyReturnRequest(id){
   addAudit(r.approvedBy,'رفض طلب استرجاع عهدة — السبب: '+r.rejectReason,'custody_return_requests',r.number);
   render();
 }
+function applyRRPeriod(val){
+  if(!val){ return; }
+  const to=todayStr();
+  const d=new Date(to);
+  let from;
+  if(val==='month'){ d.setMonth(d.getMonth()-1); }
+  else if(val==='2months'){ d.setMonth(d.getMonth()-2); }
+  else if(val==='year'){ d.setFullYear(d.getFullYear()-1); }
+  from=d.toISOString().slice(0,10);
+  state.rrPrintRange={from,to};
+  render();
+}
+function printCustodyReturnRequests(){
+  const rng=state.rrPrintRange||{};
+  const list=state.custodyReturnRequests.filter(r=>{
+    if(rng.from&&r.requestDate<rng.from) return false;
+    if(rng.to&&r.requestDate>rng.to) return false;
+    return true;
+  });
+  const now=new Date();
+  const printDate=now.toLocaleDateString('en-GB',{year:'numeric',month:'long',day:'numeric'});
+  const rows=list.slice().reverse().map(r=>{
+    const club=findClub(r.clubId);
+    const itemsText=r.items.map(p=>{const a=findAsset(p.assetId);return `${a?a.name:'—'} (راجع:${p.qtyReturned}${p.qtyDamaged?', تالف:'+p.qtyDamaged:''})`;}).join('، ');
+    const statusTxt=r.status==='بانتظار الموافقة'?'بانتظار الموافقة':r.status==='موافق عليه'?'موافق عليه':'مرفوض';
+    return `<tr><td>${r.number}</td><td>${escapeHtml(r.requester)}</td><td>${escapeHtml(club?club.name:'—')}</td><td>${itemsText}</td><td>${r.requestDate} ${r.requestTime}</td><td>${statusTxt}</td></tr>`;
+  }).join('');
+  const w=window.open('','_blank'); if(!w){alert('الرجاء السماح بفتح النوافذ المنبثقة للطباعة');return;}
+  w.document.write(`<html dir="rtl"><head><meta charset="UTF-8"><title>تقرير طلبات استرجاع العهدة</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;900&display=swap" rel="stylesheet">
+  <style>
+    *{box-sizing:border-box} @page{size:A4 landscape;margin:14mm}
+    body{font-family:'Tajawal',Arial;color:#16212B;background:#fff}
+    .wrap{padding:16px 24px}
+    .hdr{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #0B3B6B;padding-bottom:10px;margin-bottom:8px;direction:ltr}
+    .org{font-weight:900;font-size:15px;color:#0B3B6B;text-align:right;direction:rtl}
+    .date{font-size:10px;color:#5B6A78;text-align:left;direction:rtl}
+    .title{text-align:center;font-size:18px;font-weight:900;color:#0B3B6B;margin:10px 0 4px}
+    .range{text-align:center;font-size:11px;color:#5B6A78;margin-bottom:14px;}
+    table{width:100%;border-collapse:collapse;font-size:11.5px}
+    th{background:#0B3B6B;color:#fff;padding:8px;border:1px solid #08294f}
+    td{padding:7px 8px;border:1px dashed #9fb3c4;text-align:center}
+    tr:nth-child(even) td{background:#F5F7FA}
+    .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+    .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+    .ptb .b-print{background:#0B3B6B;color:#fff;} .ptb .b-pdf{background:#1B5FA6;color:#fff;} .ptb .b-close{background:#e2e8ee;color:#16212B;}
+    @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb"><button class="b-print" onclick="window.print()">🖨 طباعة</button><button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button><button class="b-close" onclick="window.close()">✕ إغلاق</button></div>
+  <div class="wrap">
+    <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
+      <div class="org">${escapeHtml(state.orgName)}</div></div>
+    <div class="title">📋 تقرير طلبات استرجاع العهدة (${list.length} طلب)</div>
+    ${(rng.from||rng.to)?`<div class="range">الفترة: من ${rng.from||'البداية'} إلى ${rng.to||'اليوم'}</div>`:''}
+    <table><thead><tr><th>رقم الطلب</th><th>المستخدم</th><th>النادي</th><th>الأصناف</th><th>تاريخ الطلب</th><th>الحالة</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="6">لا توجد بيانات</td></tr>'}</tbody></table>
+  </div><script>window.onload=()=>window.print();<\/script></body></html>`);
+  w.document.close();
+}
 function printReturnVoucher(groupNumber){
   const items=state.loans.filter(l=>(l.groupNumber||l.number)===groupNumber);
   if(!items.length)return;
@@ -2439,7 +2783,9 @@ function printReturnVoucher(groupNumber){
     const totalDamaged=rets.reduce((s,r)=>s+r.qtyDamaged,0);
     const originalQty=l.qty+totalReturned;
     const lastReturnDate=rets.length?rets[rets.length-1].date:'—';
-    return `<tr><td>${i+1}</td><td style="text-align:right;font-weight:700;">${a?a.name:'—'}</td><td>${escapeHtml(l.purpose||club?.name||'—')}</td><td>${originalQty}</td><td><strong>${totalReturned||'—'}</strong></td><td style="color:#8A1538;font-weight:700;">${totalDamaged||'—'}</td><td>${lastReturnDate}</td></tr>`;
+    const fullyReturned=totalReturned>0&&totalReturned>=originalQty;
+    const statusLabel=totalReturned<=0?'—':(fullyReturned?'مسترجعة بالكامل':'مسترجعة بنواقص');
+    return `<tr><td>${i+1}</td><td style="text-align:right;font-weight:700;">${a?a.name:'—'}</td><td>${escapeHtml(l.purpose||club?.name||'—')}</td><td>${originalQty}</td><td><strong>${totalReturned||'—'}</strong></td><td style="color:#8A1538;font-weight:700;">${totalDamaged||'—'}</td><td>${statusLabel}</td><td>${lastReturnDate}</td></tr>`;
   }).join('');
   const totalOut=items.reduce((s,l)=>{const rets=state.returns.filter(r=>r.loanId===l.id);return s+l.qty+rets.reduce((s2,r)=>s2+r.qtyReturned,0);},0);
   const totalRet=items.reduce((s,l)=>s+state.returns.filter(r=>r.loanId===l.id).reduce((s2,r)=>s2+r.qtyReturned,0),0);
@@ -2472,7 +2818,19 @@ function printReturnVoucher(groupNumber){
     .sign{display:flex;justify-content:space-between;margin-top:40px;font-size:12px;}
     .sign div{width:220px;border-top:1.5px solid #444;padding-top:6px;text-align:center}
     .ftr{margin-top:26px;border-top:1.5px solid #0B3B6B;padding-top:8px;display:flex;justify-content:space-between;font-size:9.5px;color:#5B6A78}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div><div class="org">${escapeHtml(state.orgName)}</div><div class="org-sub">ASSET &amp; CUSTODY MANAGEMENT SYSTEM</div></div></div>
     <div class="title">📥 سند إرجاع أصل ثابت</div>
@@ -2485,8 +2843,8 @@ function printReturnVoucher(groupNumber){
       <div class="cell"><div class="lbl">الحالة</div><div class="val">${first.status==='مرجعة بالكامل'&&first.totalDamaged>0?`تم الإرجاع ويوجد تالف عدد (${first.totalDamaged})`:first.status}</div></div>
     </div>
     <div class="sec-title">📋 جدول الأصول المُرجَعة:</div>
-    <table><thead><tr><th>#</th><th>الأصل</th><th>البرنامج</th><th>الخارج</th><th>المُرجَع</th><th>التالف</th><th>تاريخ الإرجاع</th></tr></thead>
-    <tbody>${rows}</tbody><tfoot><tr><td colspan="3">الإجمالي</td><td>${totalOut}</td><td>${totalRet}</td><td colspan="2"></td></tr></tfoot></table>
+    <table><thead><tr><th>#</th><th>الأصل</th><th>البرنامج</th><th>الخارج</th><th>المُرجَع</th><th>التالف</th><th>حالة الإرجاع</th><th>تاريخ الإرجاع</th></tr></thead>
+    <tbody>${rows}</tbody><tfoot><tr><td colspan="3">الإجمالي</td><td>${totalOut}</td><td>${totalRet}</td><td colspan="3"></td></tr></tfoot></table>
     <div class="ack">أُقرّ أنا الموقّع أدناه بأنّ الأصول المذكورة أعلاه قد تم إرجاعها واستلامها من قِبل المستودع، وتم تسجيل أي تلف عليها إن وُجد كما هو موضّح في الجدول.</div>
     <div class="sign"><div>المُرجِع — ${escapeHtml(first.recipient)}</div><div>أمين المستودع — ${escapeHtml(state.orgName)}</div></div>
     <div class="ftr"><span>${escapeHtml(state.orgName)}</span><span>${printDate}</span></div>
@@ -2672,7 +3030,19 @@ function printDamagesReport(){
     th{background:#8A1538;color:#fff;padding:8px;border:1px solid #5c0e26}
     td{padding:7px 8px;border:1px solid #f0c9d3;text-align:center;color:#8A1538}
     tr:nth-child(even) td{background:#F7E3E8}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date" style="color:#5B6A78;">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div class="org">${escapeHtml(state.orgName)}</div></div>
     <div class="title">⚠️ تقرير شامل — اعتماد/رفض التلفيات</div>
@@ -2717,7 +3087,19 @@ function printDamageVoucher(id){
     .sign{display:flex;justify-content:space-between;margin-top:40px;font-size:12px;}
     .sign div{width:220px;border-top:1.5px solid #444;padding-top:6px;text-align:center}
     .ftr{margin-top:26px;border-top:1.5px solid #8A1538;padding-top:8px;display:flex;justify-content:space-between;font-size:9.5px;color:#5B6A78}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div><div class="org">${escapeHtml(state.orgName)}</div><div class="org-sub">ASSET &amp; CUSTODY MANAGEMENT SYSTEM</div></div></div>
     <div class="title">🗑️ سند إتلاف أصل ثابت</div>
@@ -2812,7 +3194,19 @@ function printReservationsReport(){
     th{background:#1B5FA6;color:#fff;padding:8px;border:1px solid #0B3B6B}
     td{padding:7px 8px;border:1px solid #cfd9e2;text-align:center}
     tr:nth-child(even) td{background:#F5F7FA}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div class="org">${escapeHtml(state.orgName)}</div></div>
     <div class="title">📅 تقرير شامل — سجل الحجوزات</div>
@@ -3081,6 +3475,29 @@ function openPRModal(){
           <h4 style="margin:0 0 8px 0;">الأصناف المطلوبة</h4>
           <div id="pr-items-ui"></div>
           <button class="btn sm" style="margin-top:8px;background:var(--coral);color:#fff;" onclick="prItems.push({item:'',qty:1,unit:'قطعة'});refreshPrItemsUI()">${ic('plus',13)} إضافة صنف آخر</button>
+          <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h4 style="margin:0;">اختيار من قائمة الأصناف الجاهزة</h4>
+            ${state.currentRole!=='مسؤول نادي'?`<button type="button" class="btn sm secondary" onclick="openCatalogManageModal()">${ic('edit',13)} إدارة القائمة (حذف/تعديل)</button>`:''}
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>نوع الطلب</label>
+              <select id="pc-type" onchange="refreshCatalogSubtypesUI()">
+                ${Object.keys(state.purchaseCatalog).map(t=>`<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('')}
+              </select>
+            </div>
+            ${state.currentRole!=='مسؤول نادي'?`<div class="field" style="align-self:flex-end;"><button type="button" class="btn sm secondary" onclick="addNewPurchaseType()">${ic('plus',13)} إضافة نوع طلب جديد</button></div>`:''}
+          </div>
+          <div id="pc-subtypes-ui"></div>
+          ${state.currentRole!=='مسؤول نادي'?`
+          <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
+          <h4 style="margin:0 0 8px 0;">إضافة صنف آخر غير موجود في القائمة</h4>
+          <div class="form-grid">
+            <div class="field"><label>اسم الصنف</label><input id="pc-custom-name" placeholder="مثال: أكواب فوم"></div>
+            <div class="field"><label>نوع الصنف</label><input id="pc-custom-type" placeholder="مثال: احتياجات مشروبات"></div>
+            <div class="field"><label>العدد</label><input id="pc-custom-qty" type="number" min="1" value="1"></div>
+            <div class="field" style="align-self:flex-end;"><button type="button" class="btn sm" style="background:var(--coral);color:#fff;" onclick="addCustomCatalogItem()">${ic('plus',13)} إضافة إلى الطلب وحفظها للمستقبل</button></div>
+          </div>`:''}
         </div>
         <div class="mfoot">
           <button class="btn" onclick="submitPR()">${ic('check',15)} إرسال الطلب</button>
@@ -3089,6 +3506,186 @@ function openPRModal(){
       </div>
     </div>`);
   refreshPrItemsUI();
+  refreshCatalogSubtypesUI();
+}
+function refreshCatalogSubtypesUI(){
+  const typeSel=document.getElementById('pc-type'); if(!typeSel) return;
+  const type=typeSel.value;
+  const subtypes=state.purchaseCatalog[type]||{};
+  const names=Object.keys(subtypes);
+  const html=`
+    <div class="form-grid" style="margin-top:8px;">
+      <div class="field" style="grid-column:1/-1;"><label>نوع الصنف <span class="hint">(اختر واحدًا أو أكثر)</span></label>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;">
+          ${names.map(n=>`<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;background:var(--surface-alt);padding:6px 10px;border-radius:8px;cursor:pointer;">
+            <input type="checkbox" class="pc-subtype-check" value="${escapeHtml(n)}" style="width:auto;" onchange="refreshCatalogItemsUI()"> ${escapeHtml(n)}
+          </label>`).join('')||'<span class="hint">لا توجد أنواع أصناف بعد لهذا النوع — أضف صنفًا من القسم أدناه.</span>'}
+          <button type="button" class="btn sm secondary" onclick="addNewPurchaseSubtype()">${ic('plus',13)} إضافة نوع صنف جديد</button>
+        </div>
+      </div>
+    </div>
+    <div id="pc-items-ui"></div>`;
+  document.getElementById('pc-subtypes-ui').innerHTML=html;
+  refreshCatalogItemsUI();
+}
+function refreshCatalogItemsUI(){
+  const type=document.getElementById('pc-type').value;
+  const checked=[...document.querySelectorAll('.pc-subtype-check:checked')].map(c=>c.value);
+  const subtypes=state.purchaseCatalog[type]||{};
+  if(!checked.length){ document.getElementById('pc-items-ui').innerHTML=''; return; }
+  const html=checked.map(subName=>{
+    const items=subtypes[subName]||[];
+    return `<div class="card" style="padding:10px 12px;margin-top:8px;">
+      <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;">${escapeHtml(subName)}</div>
+      ${items.map((it,idx)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <label style="display:flex;align-items:center;gap:6px;flex:1;font-size:12.5px;cursor:pointer;">
+          <input type="checkbox" class="pc-item-check" data-type="${escapeHtml(type)}" data-sub="${escapeHtml(subName)}" data-item="${escapeHtml(it)}" style="width:auto;"> ${escapeHtml(it)}
+        </label>
+        <input type="number" min="1" value="1" class="pc-item-qty" style="width:80px;" placeholder="العدد">
+      </div>`).join('')||'<span class="hint">لا توجد أصناف مسجّلة بعد لهذا النوع.</span>'}
+    </div>`;
+  }).join('');
+  document.getElementById('pc-items-ui').innerHTML=html+`
+    <button type="button" class="btn sm" style="margin-top:10px;background:var(--coral);color:#fff;" onclick="addSelectedCatalogItems()">${ic('plus',13)} إضافة المحدد إلى الطلب</button>`;
+}
+function addSelectedCatalogItems(){
+  const rows=[...document.querySelectorAll('.pc-item-check:checked')];
+  if(!rows.length){alert('اختر صنفًا واحدًا على الأقل');return;}
+  rows.forEach(cb=>{
+    const wrap=cb.closest('div');
+    const qtyInput=wrap.querySelector('.pc-item-qty');
+    const qty=parseInt(qtyInput.value)||1;
+    if(prItems.length===1&&!prItems[0].item) prItems=[];
+    prItems.push({item:cb.dataset.item,qty,unit:'قطعة'});
+  });
+  refreshPrItemsUI();
+  alert('تمت إضافة الأصناف المحددة إلى الطلب بالأسفل.');
+}
+function addNewPurchaseType(){
+  const name=prompt('اسم نوع الطلب الجديد (مثال: رياضية، قرطاسية، صيانة...):',''); if(!name||!name.trim())return;
+  if(!state.purchaseCatalog[name.trim()]) state.purchaseCatalog[name.trim()]={};
+  const sel=document.getElementById('pc-type');
+  if(sel){ 
+    if(![...sel.options].some(o=>o.value===name.trim())){
+      const opt=document.createElement('option'); opt.value=name.trim(); opt.textContent=name.trim(); sel.appendChild(opt);
+    }
+    sel.value=name.trim();
+  }
+  refreshCatalogSubtypesUI();
+}
+function addNewPurchaseSubtype(){
+  const type=document.getElementById('pc-type').value;
+  const name=prompt('اسم نوع الصنف الجديد ضمن "'+type+'" (مثال: احتياجات مشروبات، احتياجات رحلات...):',''); if(!name||!name.trim())return;
+  if(!state.purchaseCatalog[type]) state.purchaseCatalog[type]={};
+  if(!state.purchaseCatalog[type][name.trim()]) state.purchaseCatalog[type][name.trim()]=[];
+  refreshCatalogSubtypesUI();
+}
+function openCatalogManageModal(){
+  const types=Object.keys(state.purchaseCatalog);
+  const html=types.map(type=>{
+    const subtypes=Object.keys(state.purchaseCatalog[type]||{});
+    return `<div class="card" style="padding:12px 14px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font-weight:800;">${ic('cart',14)} ${escapeHtml(type)}</span>
+        <div style="display:flex;gap:6px;">
+          <button class="btn sm secondary" onclick="renamePurchaseType('${escapeHtml(type)}')">${ic('edit',12)} تعديل الاسم</button>
+          <button class="btn sm danger" onclick="deletePurchaseType('${escapeHtml(type)}')">${ic('trash',12)} حذف النوع</button>
+        </div>
+      </div>
+      ${subtypes.map(sub=>{
+        const items=state.purchaseCatalog[type][sub]||[];
+        return `<div style="margin-right:14px;margin-bottom:10px;padding:8px 10px;background:var(--surface-alt);border-radius:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span style="font-weight:700;font-size:12.5px;">${escapeHtml(sub)}</span>
+            <div style="display:flex;gap:6px;">
+              <button class="btn sm secondary" onclick="renamePurchaseSubtype('${escapeHtml(type)}','${escapeHtml(sub)}')">${ic('edit',12)} تعديل</button>
+              <button class="btn sm danger" onclick="deletePurchaseSubtype('${escapeHtml(type)}','${escapeHtml(sub)}')">${ic('trash',12)} حذف</button>
+            </div>
+          </div>
+          ${items.map(it=>`<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:3px 0;border-top:1px dashed var(--border);">
+            <span>${escapeHtml(it)}</span>
+            <div style="display:flex;gap:4px;">
+              <button class="btn sm secondary" style="padding:2px 8px;" onclick="renameCatalogItem('${escapeHtml(type)}','${escapeHtml(sub)}','${escapeHtml(it)}')">${ic('edit',11)}</button>
+              <button class="btn sm danger" style="padding:2px 8px;" onclick="deleteCatalogItem('${escapeHtml(type)}','${escapeHtml(sub)}','${escapeHtml(it)}')">${ic('trash',11)}</button>
+            </div>
+          </div>`).join('')||'<div class="hint" style="font-size:11px;">لا توجد أصناف بعد</div>'}
+          <div style="margin-top:8px;">
+            <textarea id="paste-${escapeHtml(type)}-${escapeHtml(sub)}" placeholder="الصق أصنافًا هنا، كل صنف بسطر مستقل، لإضافتها دفعة واحدة لهذا النوع" style="min-height:50px;font-size:12px;"></textarea>
+            <button class="btn sm" style="margin-top:4px;background:var(--coral);color:#fff;" onclick="pasteAddCatalogItems('${escapeHtml(type)}','${escapeHtml(sub)}')">${ic('plus',12)} إضافة الملصق</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('');
+  openModal(`
+    <div class="modal-overlay" onclick="if(event.target===this) closeModal()">
+      <div class="modal" style="max-width:640px;">
+        <div class="mhead"><h3>${ic('edit',16)} إدارة قائمة أنواع الطلبات والأصناف</h3><button class="x-close" onclick="closeModal()">${ic('x',15)}</button></div>
+        <div class="mbody">${html||'<div class="empty">لا توجد أنواع مسجّلة بعد</div>'}</div>
+        <div class="mfoot"><button class="btn secondary" onclick="closeModal();openPRModal();">إغلاق والعودة للطلب</button></div>
+      </div>
+    </div>`);
+}
+function renamePurchaseType(type){
+  const name=prompt('الاسم الجديد لنوع الطلب:',type); if(!name||!name.trim()||name.trim()===type)return;
+  state.purchaseCatalog[name.trim()]=state.purchaseCatalog[type];
+  delete state.purchaseCatalog[type];
+  openCatalogManageModal();
+}
+function deletePurchaseType(type){
+  if(!confirm('حذف نوع الطلب "'+type+'" وكل ما بداخله من أنواع أصناف؟')) return;
+  delete state.purchaseCatalog[type];
+  openCatalogManageModal();
+}
+function renamePurchaseSubtype(type,sub){
+  const name=prompt('الاسم الجديد لنوع الصنف:',sub); if(!name||!name.trim()||name.trim()===sub)return;
+  state.purchaseCatalog[type][name.trim()]=state.purchaseCatalog[type][sub];
+  delete state.purchaseCatalog[type][sub];
+  openCatalogManageModal();
+}
+function deletePurchaseSubtype(type,sub){
+  if(!confirm('حذف نوع الصنف "'+sub+'" وكل أصنافه؟')) return;
+  delete state.purchaseCatalog[type][sub];
+  openCatalogManageModal();
+}
+function renameCatalogItem(type,sub,item){
+  const name=prompt('الاسم الجديد للصنف:',item); if(!name||!name.trim()||name.trim()===item)return;
+  const arr=state.purchaseCatalog[type][sub];
+  const idx=arr.indexOf(item); if(idx>-1) arr[idx]=name.trim();
+  openCatalogManageModal();
+}
+function deleteCatalogItem(type,sub,item){
+  if(!confirm('حذف الصنف "'+item+'"؟')) return;
+  const arr=state.purchaseCatalog[type][sub];
+  const idx=arr.indexOf(item); if(idx>-1) arr.splice(idx,1);
+  openCatalogManageModal();
+}
+function pasteAddCatalogItems(type,sub){
+  const ta=document.getElementById('paste-'+type+'-'+sub);
+  const lines=ta.value.split('\n').map(l=>l.trim()).filter(Boolean);
+  if(!lines.length){alert('الصق أصنافًا أولاً');return;}
+  if(!state.purchaseCatalog[type][sub]) state.purchaseCatalog[type][sub]=[];
+  lines.forEach(l=>{ if(!state.purchaseCatalog[type][sub].includes(l)) state.purchaseCatalog[type][sub].push(l); });
+  openCatalogManageModal();
+}
+function addCustomCatalogItem(){
+  const name=document.getElementById('pc-custom-name').value.trim();
+  const subtype=document.getElementById('pc-custom-type').value.trim();
+  const qty=parseInt(document.getElementById('pc-custom-qty').value)||1;
+  if(!name){alert('الرجاء إدخال اسم الصنف');return;}
+  if(!subtype){alert('الرجاء إدخال نوع الصنف');return;}
+  const type=document.getElementById('pc-type').value;
+  if(!state.purchaseCatalog[type]) state.purchaseCatalog[type]={};
+  if(!state.purchaseCatalog[type][subtype]) state.purchaseCatalog[type][subtype]=[];
+  if(!state.purchaseCatalog[type][subtype].includes(name)) state.purchaseCatalog[type][subtype].push(name);
+  if(prItems.length===1&&!prItems[0].item) prItems=[];
+  prItems.push({item:name,qty,unit:'قطعة'});
+  document.getElementById('pc-custom-name').value='';
+  document.getElementById('pc-custom-type').value='';
+  document.getElementById('pc-custom-qty').value='1';
+  refreshPrItemsUI();
+  refreshCatalogSubtypesUI();
+  alert('تمت إضافة الصنف إلى الطلب وحفظه في القائمة للاستخدام لاحقًا.');
 }
 function refreshPrItemsUI(){
   const html=prItems.map((it,i)=>`
@@ -3115,9 +3712,28 @@ function parsePastedOrders(text){
       parsed.push({item:line, qty:1, unit:'قطعة'});
     }
   });
-  if(parsed.length){ prItems=parsed; refreshPrItemsUI(); }
+  if(parsed.length){
+    prItems=parsed; refreshPrItemsUI();
+    // نحفظ الأصناف الملصقة أيضًا ضمن قائمة الأصناف الجاهزة تحت نوع الطلب المحدد حاليًا، مع إرفاق اسم النوع باسم الصنف
+    const typeSel=document.getElementById('pc-type');
+    const type=typeSel?typeSel.value:null;
+    if(type){
+      if(!state.purchaseCatalog[type]) state.purchaseCatalog[type]={};
+      const subName='أصناف ملصقة';
+      if(!state.purchaseCatalog[type][subName]) state.purchaseCatalog[type][subName]=[];
+      parsed.forEach(p=>{
+        const taggedName=`${p.item} (${type})`;
+        if(!state.purchaseCatalog[type][subName].includes(taggedName)) state.purchaseCatalog[type][subName].push(taggedName);
+      });
+    }
+  }
 }
 function submitPR(){
+  const pendingChecked=[...document.querySelectorAll('.pc-item-check:checked')];
+  if(pendingChecked.length){
+    const proceed=confirm('لديك أصناف محددة من "قائمة الأصناف الجاهزة" لم تُضَف إلى الطلب بعد.\nاضغط "موافق" لإضافتها الآن قبل الإرسال، أو "إلغاء" لتجاهلها والاستمرار في الإرسال.');
+    if(proceed){ addSelectedCatalogItems(); return; }
+  }
   const cu=currentUserObj();
   const requester=cu?cu.fullName:state.currentRole;
   const clubId=cu?cu.clubId:null;
@@ -3659,7 +4275,19 @@ function printPurchases(){
     td{padding:7px 8px;border:1px solid #cfd9e2;text-align:center}
     tr:nth-child(even) td{background:#F5F7FA}
     .ftr{margin-top:16px;border-top:1.5px solid #1B5FA6;padding-top:6px;display:flex;justify-content:space-between;font-size:9.5px;color:#5B6A78}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(50)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div class="org">${escapeHtml(state.orgName)}</div></div>
     <div class="title-box">🛒 تقرير طلبات الشراء (${list.length} طلب)</div>
@@ -4005,7 +4633,7 @@ function switchReportTab(t){ state.reportTab=t; render(); }
 function renderReports(){
   const tabs=[
     ['assets','الأصول الثابتة'],['loans','أصول خارج المخزن (عهد خارجة)'],['consumableCustody','عهد مستهلكة (غير راجعة)'],['overdue','أصول متأخرة'],['damages','أصول تالفة'],
-    ['stock','تقرير المخزون'],['clubs','أصول في ذمة نادي'],['byclub','تقرير حسب النادي (طباعة)'],['clubsDamages','تقرير شامل: العهد والتلفيات حسب كل نادي'],['allRequests','كل الطلبات حسب الفترة (شراء + عهدة + حجز)'],['users','تقرير حسب المستخدم'],['purchases','تقرير طلبات الشراء'],['comprehensive','تقرير شامل (الكل)']
+    ['stock','تقرير المخزون'],['clubs','أصول في ذمة نادي'],['byclub','تقرير حسب النادي (طباعة)'],['clubsDamages','تقرير شامل: العهد والتلفيات حسب كل نادي'],['allRequests','كل الطلبات حسب الفترة (شراء + عهدة + حجز)'],['approvals','سجل الموافقات (من وافق على ماذا)'],['users','تقرير حسب المستخدم'],['purchases','تقرير طلبات الشراء'],['comprehensive','تقرير شامل (الكل)']
   ];
   if(!state.reportRange) state.reportRange={from:'',to:''};
   const tabsHtml=`
@@ -4160,6 +4788,25 @@ function renderReports(){
         <thead><tr><th>الأصل</th><th>الشخص</th><th>النادي</th><th>العدد</th><th>التاريخ</th><th>الحالة</th></tr></thead>
         <tbody>${resList.map(r=>`<tr><td style="font-weight:700;">${escapeHtml(r.assetName)}</td><td>${escapeHtml(r.userName)}</td><td>${escapeHtml(findClub(r.clubId)?.name||'—')}</td><td>${r.qty}</td><td>${r.reserveDate} ${r.reserveTime||''}</td><td>${resStatusPill(r.status)}</td></tr>`).join('')||`<tr><td colspan="6" class="empty">لا توجد نتائج</td></tr>`}</tbody>
       </table></div>`;
+  } else if(state.reportTab==='approvals'){
+    const rows=[];
+    state.custodyRequests.filter(c=>c.status!=='بانتظار الموافقة').forEach(c=>{
+      rows.push({type:'طلب إخراج عهدة',ref:c.number,requester:c.requester,decision:c.status,by:c.approvedBy||'—',date:c.approvedDate||'—',reason:c.rejectReason||''});
+    });
+    state.custodyReturnRequests.filter(r=>r.status!=='بانتظار الموافقة').forEach(r=>{
+      rows.push({type:'طلب استرجاع عهدة',ref:r.number,requester:r.requester,decision:r.status,by:r.approvedBy||'—',date:r.approvedDate||'—',reason:r.rejectReason||''});
+    });
+    state.damages.filter(d=>d.status!=='بانتظار الاعتماد').forEach(d=>{
+      rows.push({type:'تلف',ref:d.loanNumber,requester:d.assetName,decision:d.status,by:d.decidedBy||'—',date:d.decidedDate||'—',reason:d.managerNote||''});
+    });
+    state.purchaseRequests.filter(p=>p.status==='ملغي'&&p.cancelReason).forEach(p=>{
+      rows.push({type:'إلغاء طلب شراء',ref:p.number,requester:p.requester,decision:'ملغي',by:currentUserObj()?.fullName||'—',date:p.date,reason:p.cancelReason});
+    });
+    rows.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    table=`<div class="table-wrap card table-ruled"><table>
+      <thead><tr><th>نوع الطلب</th><th>المرجع</th><th>مقدّم الطلب</th><th>القرار</th><th>مَن قام بالقرار</th><th>التاريخ</th><th>السبب/الملاحظة</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${r.type}</td><td style="font-weight:700;">${escapeHtml(r.ref)}</td><td>${escapeHtml(r.requester)}</td><td>${r.decision}</td><td style="font-weight:700;">${escapeHtml(r.by)}</td><td>${r.date}</td><td>${escapeHtml(r.reason)}</td></tr>`).join('')||`<tr><td colspan="7" class="empty">لا توجد قرارات مسجّلة بعد</td></tr>`}</tbody>
+    </table></div>`;
   } else if(state.reportTab==='users'){
     table=`<div class="table-wrap card"><table>
       <thead><tr><th>المستخدم</th><th>رقم الجوال</th><th>الدور</th><th>عدد العمليات المسجلة</th></tr></thead>
@@ -4238,7 +4885,7 @@ function renderReports(){
 }
 function printReportTab(){
   const titles={assets:'تقرير الأصول',loans:'تقرير العهد الخارجة',consumableCustody:'تقرير العهد المستهلكة (غير الراجعة)',overdue:'تقرير العهد المتأخرة والقريبة الاستحقاق',
-    damages:'تقرير التلفيات',stock:'تقرير المخزون',clubs:'تقرير حسب النادي',byclub:'تقرير حسب النادي المحدد',clubsDamages:'تقرير شامل — العهد والتلفيات حسب كل نادي',allRequests:'تقرير شامل — كل الطلبات حسب الفترة',users:'تقرير حسب المستخدم',purchases:'تقرير طلبات الشراء',comprehensive:'تقرير شامل — الأصول والخروج والتلفيات والإجمالي'};
+    damages:'تقرير التلفيات',stock:'تقرير المخزون',clubs:'تقرير حسب النادي',byclub:'تقرير حسب النادي المحدد',clubsDamages:'تقرير شامل — العهد والتلفيات حسب كل نادي',allRequests:'تقرير شامل — كل الطلبات حسب الفترة',approvals:'سجل الموافقات',users:'تقرير حسب المستخدم',purchases:'تقرير طلبات الشراء',comprehensive:'تقرير شامل — الأصول والخروج والتلفيات والإجمالي'};
   const title=titles[state.reportTab]||'تقرير';
   const rng=state.reportRange||{from:'',to:''};
   const inRange=d=>{ if(!d)return true; if(rng.from&&d<rng.from)return false; if(rng.to&&d>rng.to)return false; return true; };
@@ -4292,6 +4939,19 @@ function printReportTab(){
     state.reservations.filter(r=>inR(r.reserveDate)&&(matchQ(r.userName)||matchQ(r.assetName)||matchQ(findClub(r.clubId)?.name))).forEach(r=>{
       rows.push(['حجز',r.assetName,r.userName,findClub(r.clubId)?.name||'—',r.qty+' قطعة',r.reserveDate,r.status]);
     });
+  }else if(state.reportTab==='approvals'){
+    headers=['نوع الطلب','المرجع','مقدّم الطلب','القرار','مَن قام بالقرار','التاريخ','السبب/الملاحظة'];
+    rows=[];
+    state.custodyRequests.filter(c=>c.status!=='بانتظار الموافقة').forEach(c=>{
+      rows.push(['طلب إخراج عهدة',c.number,c.requester,c.status,c.approvedBy||'—',c.approvedDate||'—',c.rejectReason||'']);
+    });
+    state.custodyReturnRequests.filter(r=>r.status!=='بانتظار الموافقة').forEach(r=>{
+      rows.push(['طلب استرجاع عهدة',r.number,r.requester,r.status,r.approvedBy||'—',r.approvedDate||'—',r.rejectReason||'']);
+    });
+    state.damages.filter(d=>d.status!=='بانتظار الاعتماد').forEach(d=>{
+      rows.push(['تلف',d.loanNumber,d.assetName,d.status,d.decidedBy||'—',d.decidedDate||'—',d.managerNote||'']);
+    });
+    rows.sort((a,b)=>String(b[5]||'').localeCompare(String(a[5]||'')));
   }else if(state.reportTab==='clubsDamages'){
     headers=['النادي','النوع','رقم العملية / الأصل','التفاصيل','العدد','الحالة/السبب','التاريخ'];
     rows=[]; rowFlags=[];
@@ -4349,7 +5009,19 @@ function printReportTab(){
     tr:nth-child(even) td{background:#F5F7FA}
     .date{direction:rtl;text-align:left}
     .ftr{margin-top:16px;border-top:1.5px solid #1B5FA6;padding-top:6px;display:flex;justify-content:space-between;font-size:9.5px;color:#5B6A78}
-  </style></head><body><div class="wrap">
+  .ptb{display:flex;gap:8px;justify-content:flex-end;padding:10px 24px;background:#F5F7FA;border-bottom:1px solid #dfe6ec;}
+  .ptb button{cursor:pointer;border:none;border-radius:7px;padding:8px 16px;font-family:'Tajawal',Arial;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px;}
+  .ptb .b-print{background:#0B3B6B;color:#fff;}
+  .ptb .b-pdf{background:#1B5FA6;color:#fff;}
+  .ptb .b-close{background:#e2e8ee;color:#16212B;}
+  @media print{.ptb{display:none;}}
+  </style></head><body>
+  <div class="ptb">
+    <button class="b-print" onclick="window.print()">🖨 طباعة</button>
+    <button class="b-pdf" onclick="window.print()">⬇ تنزيل PDF</button>
+    <button class="b-close" onclick="window.close()">✕ إغلاق</button>
+  </div>
+  <div class="wrap">
     <div class="hdr">${printLogoHtml(52)}<div class="date">تاريخ الطباعة<br><strong>${printDate}</strong></div>
       <div><div class="org">${escapeHtml(state.orgName)}</div><div class="org-sub">نظام إدارة الأصول والعهد والأندية</div></div></div>
     <div class="title-box">${title}</div>
