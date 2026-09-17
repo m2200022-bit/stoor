@@ -740,14 +740,11 @@ function regForm(){
     <input id="rp" type="tel" inputmode="numeric" maxlength="8" placeholder="8 أرقام"></div></div>
   <div class="lgf"><label for="rc">النادي الثقافي</label>
     <div class="lgin"><span class="ic">&#127963;</span>
-    <select id="rc" onchange="document.getElementById('rcnew').style.display=this.value==='__new'?'block':'none'"
+    <select id="rc"
       style="width:100%;padding:13px 48px 13px 14px;border:1.5px solid #DBE1E8;border-radius:12px;background:#F9FAFC;text-align:right">
-      ${S.clubs.map(c=>`<option value="${c.id}">${h(c.name)}</option>`).join('')}
-      <option value="__new">+ إضافة نادٍ جديد</option></select></div>
-    <div id="rcnew" style="display:none;margin-top:8px">
-      <div class="lghint" style="background:#FBEFED;border-color:#F0C9C5;color:#8A1F19">
-        قم بالتواصل مع المشرف لإضافة النادي أولًا، ثم اختره من القائمة.
-        ${S.settings.whatsapp?`<br>واتساب المشرف: <b>${h(S.settings.whatsapp)}</b>`:''}</div></div></div>
+      ${S.clubs.map(c=>`<option value="${c.id}">${h(c.name)}</option>`).join('')}</select></div>
+    <div class="lghint" style="margin-top:8px">اختر ناديك من القائمة. إضافة نادٍ جديد من صلاحية الإدارة —
+      إن لم يكن ناديك مدرجًا تواصل مع المشرف${S.settings.whatsapp?` على الواتساب <b>${h(S.settings.whatsapp)}</b>`:''}.</div></div>
   <div class="lgf"><label for="ru">اسم المستخدم المطلوب</label>
     <div class="lgin"><span class="ic">&#9997;</span><input id="ru" type="text" placeholder="اسم المستخدم"></div></div>
   <div class="lgf"><label for="rw">كلمة المرور</label>
@@ -787,7 +784,8 @@ function doRegister(){
   if(!/^[0-9]{8}$/.test(p))return toast('رقم الهاتف يجب أن يكون 8 أرقام','dan');
   if(w.length<6)return toast('كلمة المرور 6 أحرف على الأقل','dan');
   if(S.users.some(x=>x.username===u))return toast('اسم المستخدم مستخدم مسبقًا، اختر غيره','dan');
-  if(c==='__new')return toast('قم بالتواصل مع المشرف لإضافة النادي أولًا','dan');
+  if(!c||c==='__new'||!S.clubs.some(x=>x.id===c))
+    return toast('اختر ناديك من القائمة — إضافة نادٍ جديد من صلاحية الإدارة، تواصل مع المشرف','dan');
   S.users.push({id:uid(),fullName:n,username:u,pass:w,role:'club',clubId:c,phone:p,status:'pending',createdAt:nowISO()});
   notify('طلب تسجيل جديد من '+n+' — '+clubName(c),'manager');
   notify('طلب تسجيل جديد من '+n+' — '+clubName(c),'keeper');
