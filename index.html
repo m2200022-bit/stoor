@@ -542,6 +542,83 @@ function runAlerts(){
   });
   if(n)save();
 }
+function myMsgs(){
+  if(!ses)return [];
+  if(ses.role==='club')return S.msgs.filter(m=>m.from!=='club'&&(!m.clubId||m.clubId===ses.clubId));
+  return S.msgs.filter(m=>m.from==='club'&&(m.toRole==='all'||m.toRole===ses.role||
+    (ses.role==='supervisor'&&m.toRole==='keeper')||ses.role==='admin'));
+}
+function unreadMsgs(){
+  if(!ses)return 0;
+  return myMsgs().filter(m=>!(m.read||[]).includes(ses.id)).length;
+}
+function readMsg(id){
+  const m=S.msgs.find(x=>x.id===id);
+  if(m){m.read=m.read||[];if(!m.read.includes(ses.id))m.read.push(ses.id)}
+  save();render();
+}
+function popupMsg(){
+  if(!ses)return;
+  const m=myMsgs().find(x=>!(x.read||[]).includes(ses.id));
+  if(!m)return;
+  modal(`<div class="modal sm"><div class="mh"><h3>&#9993; ${m.from==='club'?'رسالة من '+h(clubName(m.clubId)):'رسالة من الإدارة'}</h3></div>
+  <div class="mb"><div style="font-size:15px;line-height:2">${h(m.text)}</div>
+    <div style="color:var(--ink3);font-size:12.5px;margin-top:10px">${h(m.by||'الإدارة')} — ${fmtDT(m.ts)}</div></div>
+  <div class="mf"><button class="btn gold" onclick="closeModal();readMsg('${m.id}')">&#10003; تمت القراءة</button></div></div>`);
+}
+function pgClubMsgs(){
+  const list=myMsgs();
+  const sent=S.msgs.filter(m=>m.from==='club'&&m.clubId===ses.clubId);
+  return `<div class="note" style="margin-bottom:14px;background:#fdf3d4;border-color:#e6cd7a;color:#6c5313">
+    &#9993; <b>رسائل الإدارة وأمين المخزن</b> — تصلك هنا التعاميم والردود، ويمكنك مراسلتهم من الصندوق أدناه.
+    ${unreadMsgs()?`لديك <b>${unreadMsgs()}</b> رسالة غير مقروءة.`:'لا توجد رسائل غير مقروءة.'}</div>
+  <div class="card" style="margin-bottom:18px;border-color:#e6cd7a"><div class="card-h" style="background:#fdf3d4"><h3>الرسائل الواردة</h3>
+    ${unreadMsgs()?`<span class="pill p-dan">${unreadMsgs()} غير مقروءة</span>
+      <button class="btn ghost sm" style="margin-inline-start:auto" onclick="readAllMsgs()">تحديد الكل كمقروء</button>`:''}</div>
+    <div class="card-b" style="padding:0">
+    ${list.length?list.slice(0,60).map(m=>{
+      const un=!(m.read||[]).includes(ses.id);
+      return `<div style="padding:12px 16px;border-bottom:1px solid var(--line2);${un?'background:var(--gold-l)':''}">
+        <div style="font-weight:${un?'700':'400'}">${h(m.text)}</div>
+        <div style="color:var(--ink3);font-size:12.5px;margin-top:4px">${h(m.by||'الإدارة')} — ${fmtDT(m.ts)}
+          ${un?`<button class="btn gold sm" style="margin-inline-start:8px" onclick="readMsg('${m.id}')">&#10003; تمت القراءة</button>`
+            :'<span class="pill p-ok" style="margin-inline-start:8px">مقروءة</span>'}</div></div>`}).join('')
+      :`<div class="empty"><b>لا توجد رسائل</b>ستصلك هنا رسائل الإدارة وأمين المخزن.</div>`}
+    </div></div>
+
+  <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>إرسال رسالة</h3></div>
+  <div class="card-b">
+    <div class="row">
+      <div class="field"><label>المرسل إليه</label><select id="cm_to">
+        <option value="keeper">أمين المخزن</option>
+        <option value="admin">مدير النظام</option>
+        <option value="all">الإدارة وأمين المخزن</option></select></div>
+    </div>
+    <div class="field"><label>نص الرسالة</label><textarea id="cm_txt" placeholder="اكتب رسالتك"></textarea></div>
+    <button class="btn gold" onclick="sendClubMsg()">إرسال</button></div></div>
+
+  <div class="card"><div class="card-h"><h3>رسائلي المرسلة</h3></div><div class="tw">
+    <table><thead><tr><th>التاريخ</th><th>إلى</th><th>الرسالة</th><th>الحالة</th></tr></thead>
+    <tbody>${sent.length?sent.slice(0,40).map(m=>`<tr><td>${fmtDT(m.ts)}</td>
+      <td>${m.toRole==='keeper'?'أمين المخزن':m.toRole==='admin'?'مدير النظام':'الإدارة وأمين المخزن'}</td>
+      <td style="text-align:right">${h(m.text)}</td>
+      <td>${(m.read||[]).length?'<span class="pill p-ok">قُرئت</span>':'<span class="pill p-warn">لم تُقرأ بعد</span>'}</td></tr>`).join('')
+      :`<tr><td colspan="4"><div class="empty"><b>لم ترسل رسائل بعد</b></div></td></tr>`}</tbody></table></div></div>`;
+}
+function readAllMsgs(){
+  myMsgs().forEach(m=>{m.read=m.read||[];if(!m.read.includes(ses.id))m.read.push(ses.id)});
+  save();render();toast('حُدّدت كل الرسائل كمقروءة','ok');
+}
+function sendClubMsg(){
+  const to=document.getElementById('cm_to').value,t=(document.getElementById('cm_txt').value||'').trim();
+  if(!t)return toast('اكتب نص الرسالة','dan');
+  S.msgs.unshift({id:uid(),ts:nowISO(),clubId:ses.clubId,text:t,by:ses.fullName+' — '+clubName(ses.clubId),
+    from:'club',toRole:to,read:[],popup:false});
+  notify('رسالة من '+clubName(ses.clubId)+': '+t,to==='admin'?'admin':'keeper');
+  if(to!=='keeper')notify('رسالة من '+clubName(ses.clubId)+': '+t,'manager');
+  logIt('إرسال رسالة','رسالة',to,'',t.slice(0,60));
+  save();renderPage();toast('أُرسلت الرسالة','ok');
+}
 function noteKind(t){
   t=String(t||'');
   if(/طلب جديد|طلب تسجيل|طلب عهدة|طلب إرجاع/.test(t))return 'طلب جديد';
@@ -705,6 +782,9 @@ function renderAuth(){
         <button class="${authTab==='login'?'on':''}" onclick="authTab='login';renderAuth()">تسجيل الدخول</button>
         <button class="reg ${authTab!=='login'?'on':''}" onclick="authTab='reg';renderAuth()">طلب تسجيل نادٍ</button>
       </div>
+      ${(S.settings.publicNotice&&S.settings.publicNotice.active&&S.settings.publicNotice.text)?
+        `<div class="lghint" style="margin-bottom:14px;background:#f5ebd2;border-color:#e4d3a6;color:#6c5313">
+          &#128227; ${h(S.settings.publicNotice.text)}</div>`:''}
       ${authTab==='login'?loginForm():authTab==='reg'?regForm():forgotForm()}
     </main>
   </div>`;
@@ -773,7 +853,7 @@ function doLogin(){
   S.logins.unshift({id:uid(),ts:nowISO(),username:u,ok:true,why:''});
   const rem=document.getElementById('lgrem');
   try{ if(rem&&rem.checked)localStorage.setItem('wh_remember',u); else localStorage.removeItem('wh_remember'); }catch(e){}
-  ses=usr; route='dash'; logIt('تسجيل دخول','مستخدم',usr.username); runAlerts(); save(); render();
+  ses=usr; route='dash'; logIt('تسجيل دخول','مستخدم',usr.username); runAlerts(); draftLoad(); save(); render();
   startSync();
 }
 function doRegister(){
@@ -844,8 +924,8 @@ const NAV=[
     {k:'guide',t:'دليل الاستخدام',full:'دليل استخدام النظام',roles:['admin']}
   ]},
   {key:'stock',g:'المخزون',icon:'&#128230;',items:[
-    {k:'assets',t:'المواد الثابتة',full:'الأصول الثابتة',roles:['club','keeper','manager','admin']},
-    {k:'cons',t:'المواد الاستهلاكية',full:'المواد الاستهلاكية',roles:['club','keeper','manager','admin']},
+    {k:'assets',t:'المواد الثابتة',full:'الأصول الثابتة',roles:['keeper','manager','admin']},
+    {k:'cons',t:'المواد الاستهلاكية',full:'المواد الاستهلاكية',roles:['keeper','manager','admin']},
     {k:'audit',t:'الجرد',full:'جرد المخزون',roles:['keeper','manager','admin']},
     {k:'moves',t:'الحركات',full:'حركة المخزون',roles:['keeper','manager','admin']}
   ]},
@@ -853,14 +933,18 @@ const NAV=[
     {k:'purchase',t:'طلب شراء',full:'طلب شراء موحّد',roles:['club','admin']},
     {k:'newasset',t:'طلب مواد ثابتة',full:'طلب أصول ثابتة (عهدة)',roles:['club','admin']},
     {k:'newcons',t:'طلب مواد استهلاكية',full:'طلب مواد استهلاكية',roles:['club','admin']},
-    {k:'reqs',t:'متابعة الطلبات',full:'متابعة الطلبات',roles:['club','keeper','manager','admin'],count:'reqs'}
+    {k:'reqs',t:'متابعة الطلبات',full:'متابعة الطلبات',roles:['club','keeper','manager','admin']},
+    {k:'custody',t:'عهد ناديكم',full:'العهد',roles:['club']},
+    {k:'vouchers',t:'سندات ناديكم',full:'السندات',roles:['club']}
+  ]},
+  {key:'msgs',g:'رسائل الإدارة',icon:'&#9993;',flat:'clubmsgs',items:[
+    {k:'clubmsgs',t:'رسائل الإدارة',full:'رسائل الإدارة وأمين المخزن',roles:['club'],count:'msgs'}
   ]},
   {key:'logs',g:'السجلات',icon:'&#128203;',items:[
-    {k:'vouchers',t:'السندات',full:'السندات',roles:['club','keeper','manager','admin']},
-    {k:'custody',t:'العهد',full:'العهد',roles:['club','keeper','manager','admin'],count:'custody'},
+    {k:'vouchers',t:'السندات',full:'السندات',roles:['keeper','manager','admin']},
+    {k:'custody',t:'العهد',full:'العهد',roles:['keeper','manager','admin']},
     {k:'regout',t:'سجل الصرف والعهد',full:'سجل الصرف والعهد',roles:['keeper','manager','admin']},
     {k:'damages',t:'الأصول التالفة',full:'الأصول التالفة',roles:['keeper','manager','admin']},
-    {k:'notes',t:'التنبيهات',full:'سجل التنبيهات',roles:['keeper','manager','admin'],badge:true},
     {k:'trail',t:'سجل التدقيق',full:'سجل التدقيق الشامل',roles:['manager','admin']}
   ]},
   {key:'reports',g:'التقارير',icon:'&#128202;',items:[
@@ -874,7 +958,8 @@ const NAV=[
   ]}
 ];
 function navCount(kind){
-  if(ses&&ses.role==='club')return 0;
+  if(kind==='msgs')return unreadMsgs();
+  return 0;
   if(kind==='reqs'){
     const rs=scopedReqs();
     if(ses.role==='club')return rs.filter(r=>!['closed','rejected'].includes(r.status)).length;
@@ -1085,8 +1170,9 @@ function render(){
       </div>
       <div class="navsearch"><span class="si">&#128269;</span>
         <input id="navQ" type="text" placeholder="بحث في الصفحات" value="${h(navQuery)}" oninput="navSearch(this.value)"></div>
-      <nav class="nav" id="navList">${navHtml()}</nav>
-      <div class="side-foot"><button class="btn-out" onclick="logout()"><span>تسجيل الخروج</span>${navMini?' &#9099;':''}</button></div>
+      <nav class="nav" id="navList">${navHtml()}
+        <div style="margin:14px 6px 0"><button class="btn-out" onclick="logout()">
+          <span>&#9099; تسجيل الخروج</span></button></div></nav>
     </aside>
     <div class="main">
       <header class="top">
@@ -1112,6 +1198,7 @@ function render(){
   renderPage();
   arabize(document.querySelector('.side'));
   arabize(document.querySelector('.top'));
+  if(ses&&!document.getElementById('modalRoot').innerHTML)popupMsg();
 }
 function go(k){
   route=k;sideOpen=false;
@@ -1124,6 +1211,7 @@ function renderPage(){
   const map={dash:pgDash,notes:pgNotes,cons:pgCons,assets:pgAssets,purchase:pgPurchase,reqs:pgReqs,
     custody:pgCustody,vouchers:pgVouchers,moves:pgMoves,regout:pgRegOut,damages:pgDamages,audit:pgAudit,
     reports:pgReports,quota:pgQuota,trail:pgTrail,newcons:pgNewCons,newasset:pgNewAsset,guide:pgGuide,
+    clubmsgs:pgClubMsgs,
     msgs:pgMsgs,users:pgUsers,settings:pgSettings};
   p.innerHTML=(map[route]||pgDash)();
   p.classList.remove('fade-up');void p.offsetWidth;p.classList.add('fade-up');
@@ -1144,7 +1232,7 @@ function pgDash(){
   const pend=S.users.filter(u=>u.status==='pending').length;
   const openC=Cu.filter(c=>c.status==='open').length;
   let out='';
-  if(ses.role==='club'){out+=frozenBanner();out+=pendingNote(ses.clubId,false);out+=windowBanner();}
+  if(ses.role==='club'){out+=frozenBanner();out+=draftBar();out+=pendingNote(ses.clubId,false);out+=windowBanner();}
   if(can('manager')&&pend) out+=`<div class="note" style="margin-bottom:14px">لديك ${pend} طلب تسجيل بانتظار الاعتماد. <a onclick="go('users')" style="cursor:pointer;font-weight:700">مراجعة الطلبات</a></div>`;
   if(can('keeper','manager','admin')&&low) out+=`<div class="note dan" style="margin-bottom:14px">${low} مادة وصلت الحد الأدنى أو أقل. <a onclick="go('cons')" style="cursor:pointer;font-weight:700">عرض المواد</a></div>`;
   out+=`<div class="sec-title">المخزون</div><div class="stats">
@@ -1278,6 +1366,96 @@ function readAllNotes(){
 }
 
 /* ================= المواد الاستهلاكية ================= */
+/* ================= مسودات الطلبات غير المرسلة ================= */
+let DRAFT={cons:{},asset:{},pur:[]};
+function draftKey(){return 'wh_draft_'+(ses?ses.id:'x')}
+function draftLoad(){
+  try{const d=JSON.parse(localStorage.getItem(draftKey())||'null');
+    DRAFT=d&&d.cons?d:{cons:{},asset:{},pur:[]}}catch(e){DRAFT={cons:{},asset:{},pur:[]}}
+}
+function draftSave(){try{localStorage.setItem(draftKey(),JSON.stringify(DRAFT))}catch(e){}}
+function draftClear(kind){
+  if(kind==='cons')DRAFT.cons={};else if(kind==='asset')DRAFT.asset={};else if(kind==='pur')DRAFT.pur=[];
+  else DRAFT={cons:{},asset:{},pur:[]};
+  draftSave();
+}
+function dSet(kind,id){
+  const ck=document.getElementById('ck_'+id),q=document.getElementById('q_'+id),n=document.getElementById('n_'+id);
+  if(!ck)return;
+  if(ck.checked)DRAFT[kind][id]={qty:num(q&&q.value)||1,notes:(n&&n.value)||''};
+  else delete DRAFT[kind][id];
+  draftSave();
+  const b=document.getElementById('draftBar');
+  if(b)b.outerHTML=draftBar();
+}
+function saveDraftPur(){
+  DRAFT.pur=[...document.querySelectorAll('#plines tr')].map(tr=>{
+    const i=tr.querySelectorAll('input');
+    return {name:i[0].value,qty:num(i[1].value),unit:i[2].value,cat:i[3].value,spec:i[4].value};
+  }).filter(x=>x.name);
+  draftSave();
+  const b=document.getElementById('draftBar');
+  if(b)b.outerHTML=draftBar();
+}
+function draftCounts(){
+  return {cons:Object.keys(DRAFT.cons||{}).length,asset:Object.keys(DRAFT.asset||{}).length,
+    pur:(DRAFT.pur||[]).length};
+}
+function draftBar(){
+  if(!ses||ses.role!=='club')return '<span id="draftBar"></span>';
+  const c=draftCounts(),tot=c.cons+c.asset+c.pur;
+  if(!tot)return '<span id="draftBar"></span>';
+  const parts=[];
+  if(c.cons)parts.push('مواد استهلاكية: '+c.cons+' صنف');
+  if(c.asset)parts.push('أصول ثابتة: '+c.asset+' صنف');
+  if(c.pur)parts.push('طلب شراء: '+c.pur+' صنف');
+  return `<div id="draftBar" class="note dan" style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div style="flex:1"><b>&#9888; لا تنسَ الطلبات المُعدّة ولم تُرسل بعد:</b> ${parts.map(h).join(' · ')}
+      — تبقى محفوظة عند تنقلك بين الصفحات حتى ترسلها.</div>
+    <button class="btn gold sm" onclick="sendAllDrafts()">&#128228; إرسال جميع طلباتك</button>
+    <button class="btn ghost sm" onclick="clearAllDrafts()">مسح المُعد</button></div>`;
+}
+function clearAllDrafts(){
+  confirmBox('مسح الطلبات المُعدّة','سيُمسح كل ما أعددته ولم ترسله.',()=>{
+    draftClear();renderPage();toast('مُسحت الطلبات المُعدّة','ok');
+  },'dan');
+}
+function draftLines(kind){
+  const src=kind==='asset'?S.assets:S.items;
+  return Object.keys(DRAFT[kind]||{}).map(id=>{
+    const o=src.find(x=>x.id===id); if(!o)return null;
+    const d=DRAFT[kind][id],q=num(d.qty);
+    if(q<=0)return null;
+    if(q>o.qty)return {err:'الكمية المطلوبة من «'+o.name+'» أكبر من الرصيد المتاح ('+o.qty+')'};
+    const ql=quotaLeft(ses.clubId,o.id,kind==='asset'?'asset':'consumable');
+    if(ql&&q>ql.left)return {err:'معيار التوزيع لـ«'+o.name+'» هو '+ql.max+' والمتاح لكم '+ql.left};
+    return {id:uid(),refId:o.id,name:o.name,unit:o.unit,qty:q,notes:d.notes||'',
+      cls:kind==='asset'?'asset':'consumable',status:'pending',done:0};
+  }).filter(Boolean);
+}
+function sendAllDrafts(){
+  if(ses.role!=='club')return;
+  if(!clubCanOrder())return;
+  const c=draftLines('cons'),a=draftLines('asset');
+  const errs=[...c,...a].filter(x=>x.err);
+  if(errs.length)return toast(errs[0].err,'dan');
+  const pur=(DRAFT.pur||[]).filter(x=>x.name&&num(x.qty)>0).map(x=>({id:uid(),refId:null,name:canonName(x.name),
+    unit:x.unit||'حبة',cat:x.cat||'',qty:num(x.qty),notes:x.spec||'',cls:'',status:'pending',done:0}));
+  if(!c.length&&!a.length&&!pur.length)return toast('لا توجد طلبات مُعدّة','dan');
+  withWindow('سيُرسل ما أعددته: '+[c.length?c.length+' مادة استهلاكية':'',a.length?a.length+' أصل ثابت':'',
+      pur.length?pur.length+' صنف شراء':''].filter(Boolean).join(' · '),()=>{
+    const made=[];
+    if(c.length){made.push(newReq('consumable',c).no);draftClear('cons')}
+    if(a.length){
+      const dups=a.map(l=>({l,d:dupInfo(ses.clubId,l.refId)})).filter(x=>x.d);
+      const r=newReq('asset',a);
+      if(dups.length){r.dup=true;r.dupReason='أُرسل ضمن «إرسال الجميع» رغم وجود عهدة قائمة';}
+      made.push(r.no);draftClear('asset');
+    }
+    if(pur.length){const r=newReq('purchase',pur);r.status='classify';r.kindHint='mixed';made.push(r.no);draftClear('pur')}
+    save();renderPage();toast('أُرسلت الطلبات: '+made.join(' ، '),'ok');go('reqs');
+  });
+}
 function pgCons(){return consManageView()}
 function pgNewCons(){
   if(ses.role!=='club')return `<div class="card"><div class="empty"><b>طلب المواد يُقدَّم من حساب النادي</b>
@@ -1291,15 +1469,18 @@ function pgNewAsset(){
 }
 function consOrderView(){
   const rows=S.items.filter(i=>i.active).map(i=>`<tr>
-    <td><input type="checkbox" class="chk" id="ck_${i.id}" onchange="tgl('${i.id}')" ${i.qty<=0?'disabled':''}></td>
+    <td><input type="checkbox" class="chk" id="ck_${i.id}" ${DRAFT.cons[i.id]?'checked':''}
+      onchange="tgl('${i.id}');dSet('cons','${i.id}')" ${i.qty<=0?'disabled':''}></td>
     <td class="mono">${h(i.code)}</td><td>${h(i.name)}</td><td>${h(i.cat)}</td><td>${h(i.unit)}</td>
     <td class="mono">${i.qty}</td>
     <td>${(function(){const ql=quotaLeft(ses.clubId,i.id,'consumable');
       return ql?`<span class="pill ${ql.left?'p-gold':'p-dan'}">${ql.left} من ${ql.max}</span>`:'<span class="pill p-gray">بلا حد</span>'})()}</td>
-    <td>${i.qty>0?`<input type="number" min="1" max="${i.qty}" id="q_${i.id}" disabled style="width:92px">`
+    <td>${i.qty>0?`<input type="number" min="1" max="${i.qty}" id="q_${i.id}" ${DRAFT.cons[i.id]?'':'disabled'}
+      value="${DRAFT.cons[i.id]?DRAFT.cons[i.id].qty:''}" oninput="dSet('cons','${i.id}')" style="width:92px">`
       :`<span class="pill p-dan">غير متوفرة</span>`}</td>
-    <td><input type="text" id="n_${i.id}" placeholder="ملاحظة" disabled></td></tr>`).join('');
-  return `${frozenBanner()}${windowBanner()}${kitBtn()}
+    <td><input type="text" id="n_${i.id}" placeholder="ملاحظة" ${DRAFT.cons[i.id]?'':'disabled'}
+      value="${DRAFT.cons[i.id]?h(DRAFT.cons[i.id].notes||''):''}" oninput="dSet('cons','${i.id}')"></td></tr>`).join('');
+  return `${frozenBanner()}${draftBar()}${windowBanner()}${kitBtn()}
   <div class="note info" style="margin-bottom:14px">المواد الاستهلاكية تُصرف ولا تُسجّل عهدة على النادي ولا يُطلب إرجاعها. إذا لم تجد المادة، أنشئ
     <a onclick="go('purchase')" style="cursor:pointer;font-weight:700">طلب شراء</a>.</div>
   <div class="card"><div class="card-h"><h3>طلب مواد استهلاكية من المخزن</h3>
@@ -1343,7 +1524,7 @@ function submitConsReq(){
   if(lines===null)return;
   if(!lines.length)return toast('اختر مادة واحدة على الأقل','dan');
   withWindow(`سيُرسل طلب بـ ${lines.length} صنف إلى مدير المخزن.`,()=>{
-    const r=newReq('consumable',lines); toast('أُرسل الطلب برقم '+r.no,'ok'); go('reqs');
+    const r=newReq('consumable',lines); draftClear('cons'); toast('أُرسل الطلب برقم '+r.no,'ok'); go('reqs');
   });
 }
 function newReq(kind,lines){
@@ -1388,7 +1569,8 @@ function consManageView(){
     ${can('manager')?`<button class="btn ghost" onclick="mergeModal('item')">&#128260; جمع الأصناف المكررة</button>`:''}
     <button class="btn ghost" onclick="document.querySelectorAll('.ib').forEach(x=>x.checked=true)">تحديد الكل</button>
     <button class="btn ghost" onclick="document.querySelectorAll('.ib').forEach(x=>x.checked=false)">إلغاء التحديد</button>
-    ${can('manager')?`<button class="btn dan" onclick="delSelected('item')">&#128465; حذف المحدد</button>`:''}`:''}
+    ${can('manager')?`<button class="btn ghost" onclick="moveSelected('item')">&#8646; نقل المحدد إلى الأصول الثابتة</button>
+    <button class="btn dan" onclick="delSelected('item')">&#128465; حذف المحدد</button>`:''}`:''}
     <div class="dd"><button class="btn ghost" onclick="ddToggle(this)">&#128424; طباعة ▾</button>
       <div class="dd-menu">
         <button onclick="itemsRep('avail','print')">طباعة المواد المتوفرة</button>
@@ -1574,6 +1756,63 @@ function refCount(kind,id){
   const open=kind==='asset'?S.custody.filter(c=>c.assetId===id&&c.status==='open'&&custRemain(c)>0).length:0;
   return {cust,reqs,vou,open};
 }
+function moveSelected(from){
+  if(!can('manager'))return toast('نقل الأصناف من صلاحية مدير المخزن ومدير النظام','dan');
+  const cls=from==='asset'?'.ab':'.ib';
+  const ids=[...document.querySelectorAll(cls+':checked')].map(x=>x.dataset.id);
+  if(!ids.length)return toast('حدّد صنفًا واحدًا على الأقل','dan');
+  const src=from==='asset'?S.assets:S.items;
+  const rows=ids.map(id=>src.find(x=>x.id===id)).filter(Boolean).map(o=>{
+    const open=from==='asset'?S.custody.filter(c=>c.assetId===o.id&&c.status==='open'&&custRemain(c)>0).length:0;
+    return {o,open};
+  });
+  const blocked=rows.filter(r=>r.open),ok=rows.filter(r=>!r.open);
+  const toName=from==='asset'?'المواد الاستهلاكية':'الأصول الثابتة';
+  modal(`<div class="modal"><div class="mh"><h3>نقل ${rows.length} صنفًا إلى ${h(toName)}</h3>
+    <button onclick="closeModal()">&times;</button></div>
+  <div class="mb">
+    ${blocked.length?`<div class="note dan"><b>${blocked.length} لا يمكن نقلها:</b> عليها عهد قائمة —
+      ${blocked.map(r=>h(r.o.name)).join(' · ')}</div>`:''}
+    ${ok.length?`<div class="note info" style="margin-top:10px">سيُنقل ${ok.length} صنفًا برصيده ووحدته وتصنيفه إلى ${h(toName)}
+      برقم جديد، وتُحوَّل إليه الطلبات والحركات المرتبطة به.<br>
+      ${ok.map(r=>h(r.o.name)+' ('+r.o.qty+')').join(' · ')}</div>`
+      :'<div class="note dan" style="margin-top:10px">لا يوجد صنف قابل للنقل ضمن المحدد.</div>'}
+  </div>
+  <div class="mf"><button class="btn gold" onclick="doMoveSelected('${from}','${ok.map(r=>r.o.id).join(',')}')"
+    ${ok.length?'':'disabled'}>تنفيذ النقل</button>
+  <button class="btn ghost" onclick="closeModal()">إلغاء</button></div></div>`);
+}
+function doMoveSelected(from,idsStr){
+  if(!can('manager'))return toast('صلاحية غير كافية','dan');
+  const ids=idsStr.split(',').filter(Boolean);
+  const src=from==='asset'?S.assets:S.items, dst=from==='asset'?S.items:S.assets;
+  let n=0;
+  ids.forEach(id=>{
+    const o=src.find(x=>x.id===id); if(!o)return;
+    let neo;
+    if(from==='asset'){
+      neo={id:uid(),code:'C-'+String(S.items.length+1+n).padStart(4,'0'),name:o.name,cat:o.cat,unit:o.unit||'حبة',
+        qty:num(o.qty),min:3,notes:'نُقل من الأصول الثابتة',shelf:o.shelf||'',active:true};
+    }else{
+      neo={id:uid(),code:'FA-'+String(S.assets.length+1+n).padStart(4,'0'),name:o.name,cat:o.cat,desc:'',
+        unit:o.unit||'حبة',qty:num(o.qty),cond:'جيدة',shelf:o.shelf||'',
+        barcode:'629'+Math.floor(Math.random()*900000000+100000000),pdate:today(),value:0,
+        notes:'نُقل من المواد الاستهلاكية',active:true};
+    }
+    dst.push(neo);
+    S.reqs.forEach(r=>r.lines.forEach(l=>{if(l.refId===o.id){l.refId=neo.id;l.cls=from==='asset'?'consumable':'asset'}}));
+    (S.audits||[]).forEach(a=>a.lines.forEach(l=>{if(l.refId===o.id){l.refId=neo.id;l.kind=from==='asset'?'consumable':'asset'}}));
+    rememberCls(neo.name,from==='asset'?'consumable':'asset',neo.cat);
+    addMove('نقل صنف',from==='asset'?'أصل ثابت ← مادة':'مادة ← أصل ثابت',o.name,0,o.qty,neo.qty,
+      'نُقل إلى '+(from==='asset'?'المواد الاستهلاكية':'الأصول الثابتة'),neo.code);
+    logIt('نقل صنف','مخزون',o.code,o.code+' — '+(from==='asset'?'أصل ثابت':'مادة استهلاكية'),
+      neo.code+' — '+(from==='asset'?'مادة استهلاكية':'أصل ثابت'));
+    src.splice(src.indexOf(o),1);
+    if(S.quota&&S.quota[o.id])delete S.quota[o.id];
+    n++;
+  });
+  save();closeModal();renderPage();toast('نُقل '+n+' صنفًا','ok');
+}
 function delSelected(kind){
   if(!can('manager'))return toast('حذف الأصناف من صلاحية مدير المخزن ومدير النظام فقط','dan');
   const cls=kind==='asset'?'.ab':'.ib';
@@ -1598,7 +1837,6 @@ function delSelected(kind){
       ${arch.map(r=>h(r.o.name)).join(' · ')}</div>`:''}
     ${del.length?`<div class="note dan" style="margin-top:10px"><b>${del.length} ستُحذف نهائيًا</b> لعدم وجود حركة عليها:
       ${del.map(r=>h(r.o.name)).join(' · ')}</div>`:''}
-    <div class="field" style="margin-top:12px"><label>سبب الحذف</label><input id="dels_r" placeholder="إلزامي"></div>
   </div>
   <div class="mf"><button class="btn dan" onclick="doDelSelected('${kind}','${ids.join(',')}')"
     ${(arch.length+del.length)?'':'disabled'}>تنفيذ الحذف</button>
@@ -1606,8 +1844,7 @@ function delSelected(kind){
 }
 function doDelSelected(kind,idsStr){
   if(!can('manager'))return toast('حذف الأصناف من صلاحية مدير المخزن ومدير النظام فقط','dan');
-  const rs=(document.getElementById('dels_r').value||'').trim();
-  if(!rs)return toast('سبب الحذف إلزامي','dan');
+  const rs='حذف بواسطة '+ses.fullName;
   const ids=idsStr.split(',').filter(Boolean);
   const arr=kind==='asset'?S.assets:S.items;
   let del=0,arch=0,skip=0;
@@ -1641,7 +1878,6 @@ function delItem(kind,id){
       سيُؤرشف ويختفي من الطلبات والقوائم مع بقاء سجله وسنداته.</div>`
       :`<div class="note dan">سيُحذف الصنف نهائيًا لعدم وجود أي حركة عليه.</div>`}
     ${o.qty>0?`<div class="note" style="margin-top:10px">الرصيد الحالي ${o.qty} — يُفضّل تسوية الكمية إلى صفر قبل الحذف.</div>`:''}
-    <div class="field" style="margin-top:12px"><label>سبب الحذف</label><input id="del_r" placeholder="إلزامي"></div>
   </div>
   <div class="mf"><button class="btn dan" onclick="doDelItem('${kind}','${id}',${hasHist?1:0})">
     ${hasHist?'أرشفة الصنف':'حذف نهائي'}</button>
@@ -1649,8 +1885,7 @@ function delItem(kind,id){
 }
 function doDelItem(kind,id,archive){
   if(!can('manager'))return toast('حذف الأصناف من صلاحية مدير المخزن ومدير النظام فقط','dan');
-  const rs=(document.getElementById('del_r').value||'').trim();
-  if(!rs)return toast('سبب الحذف إلزامي','dan');
+  const rs='حذف بواسطة '+ses.fullName;
   const arr=kind==='item'?S.items:S.assets;
   const o=arr.find(x=>x.id===id); if(!o)return;
   addMove(archive?'أرشفة صنف':'حذف صنف',kind==='item'?'مادة استهلاكية':'أصل ثابت',o.name,-num(o.qty),o.qty,0,rs,o.code);
@@ -1715,17 +1950,20 @@ function assetOrderView(){
   const rows=S.assets.filter(a=>a.active).map(a=>{
     const dup=dupInfo(ses.clubId,a.id);
     return `<tr class="${dup?'red':''}">
-    <td><input type="checkbox" class="chk" id="ck_${a.id}" onchange="tgl('${a.id}')" ${a.qty<=0?'disabled':''}></td>
+    <td><input type="checkbox" class="chk" id="ck_${a.id}" ${DRAFT.asset[a.id]?'checked':''}
+      onchange="tgl('${a.id}');dSet('asset','${a.id}')" ${a.qty<=0?'disabled':''}></td>
     <td class="mono">${h(a.code)}</td>
     <td>${h(a.name)}${dup?`<div class="red-txt" style="font-size:11.5px">لديكم عهدة قائمة: ${dup.qty} بسند ${h(dup.no)} منذ ${fmtD(dup.since)}</div>`:''}</td>
     <td>${h(a.cat)}</td><td>${h(a.unit)}</td>
     <td class="mono">${a.qty}</td>
-    <td>${a.qty>0?`<input type="number" min="1" max="${a.qty}" id="q_${a.id}" disabled style="width:92px">`
+    <td>${a.qty>0?`<input type="number" min="1" max="${a.qty}" id="q_${a.id}" ${DRAFT.asset[a.id]?'':'disabled'}
+      value="${DRAFT.asset[a.id]?DRAFT.asset[a.id].qty:''}" oninput="dSet('asset','${a.id}')" style="width:92px">`
       :`<span class="pill p-dan">خارج المخزن</span>`}</td>
-    <td><input type="text" id="n_${a.id}" placeholder="ملاحظة" disabled></td></tr>`}).join('');
+    <td><input type="text" id="n_${a.id}" placeholder="ملاحظة" ${DRAFT.asset[a.id]?'':'disabled'}
+      value="${DRAFT.asset[a.id]?h(DRAFT.asset[a.id].notes||''):''}" oninput="dSet('asset','${a.id}')"></td></tr>`}).join('');
   const kst=kitStatus(),kshort=kst.filter(x=>x.short>0);
   const mine=S.custody.filter(c=>c.clubId===ses.clubId&&c.status==='open');
-  return `${frozenBanner()}${windowBanner()}
+  return `${frozenBanner()}${draftBar()}${windowBanner()}
   <div class="note" style="margin-bottom:14px">الأصول الثابتة تُصرف عهدة على النادي ويجب إرجاعها. الأصل المصروف لا يظهر ضمن الرصيد المتاح حتى يُرجَع.</div>
   ${kitBtn()}
   ${mine.length?`<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>عهد مسجّلة على ناديك (${mine.length})</h3>
@@ -1746,7 +1984,7 @@ function submitAssetReq(){
   const dups=lines.map(l=>({l,d:dupInfo(ses.clubId,l.refId)})).filter(x=>x.d);
   if(dups.length)return dupWarnModal(dups,lines);
   withWindow(`سيُرسل طلب عهدة بـ ${lines.length} أصل إلى مدير المخزن.`,()=>{
-    const r=newReq('asset',lines); toast('أُرسل الطلب برقم '+r.no,'ok'); go('reqs');
+    const r=newReq('asset',lines); draftClear('asset'); toast('أُرسل الطلب برقم '+r.no,'ok'); go('reqs');
   });
 }
 function dupWarnModal(dups,lines){
@@ -1820,7 +2058,8 @@ function assetManageView(){
     <button class="btn dan" onclick="kitViewModal()">&#127890; الحقيبة الدائمة</button>
     <button class="btn ghost" onclick="document.querySelectorAll('.ab').forEach(x=>x.checked=true)">تحديد الكل</button>
     <button class="btn ghost" onclick="document.querySelectorAll('.ab').forEach(x=>x.checked=false)">إلغاء التحديد</button>
-    ${can('manager')?`<button class="btn dan" onclick="delSelected('asset')">&#128465; حذف المحدد</button>`:''}</div>
+    ${can('manager')?`<button class="btn ghost" onclick="moveSelected('asset')">&#8646; نقل المحدد إلى المواد الاستهلاكية</button>
+    <button class="btn dan" onclick="delSelected('asset')">&#128465; حذف المحدد</button>`:''}</div>
   <div class="card"><div class="tw"><table id="tblAM"><thead><tr><th class="nos"></th><th>رقم الأصل</th><th>الأصل</th><th>التصنيف</th>
     <th>داخل المخزن</th><th>خارج (عهدة)</th><th>الحالة</th><th>الموقع</th><th>الباركود</th><th class="nos"></th></tr></thead>
     <tbody>${rows||`<tr><td colspan="10"><div class="empty"><b>لا توجد أصول</b>أضف أول أصل ثابت.</div></td></tr>`}</tbody></table></div></div>`;
@@ -1890,7 +2129,7 @@ function saveAsset(id){
 function pgPurchase(){
   if(ses.role!=='club')return `<div class="card"><div class="empty"><b>طلبات الشراء تُنشأ من حساب النادي</b>
     راجع صفحة الطلبات لمتابعة طلبات الشراء الواردة ومعالجتها.</div></div>`;
-  return `${frozenBanner()}${windowBanner()}${kitBtn()}
+  return `${frozenBanner()}${draftBar()}${windowBanner()}${kitBtn()}
   <div class="card" style="margin-bottom:14px"><div class="card-h"><h3>طلب شراء موحّد</h3></div>
   <div class="card-b">
     <div class="field"><label>ملاحظات عامة على الطلب</label>
@@ -1909,17 +2148,18 @@ function pgPurchase(){
     <button class="btn gold" style="margin-inline-start:auto" onclick="submitPurchase()">إرسال طلب الشراء</button></div>
   <div class="tw"><table id="ptbl"><thead><tr><th class="nos">الصنف</th><th class="nos">الكمية</th><th class="nos">الوحدة</th>
     <th class="nos">التصنيف</th><th class="nos">مواصفات</th><th class="nos"></th></tr></thead>
-    <tbody id="plines"></tbody></table></div>
-  <div class="card-b" id="pempty"><div class="empty"><b>لم تضف أصنافًا بعد</b>الصق قائمة احتياجاتك في المربع أعلاه ثم اضغط «تحويل النص إلى أصناف».</div></div></div>`;
+    <tbody id="plines">${(DRAFT.pur||[]).map(x=>pLineRow(x.name,x.qty,x.unit,x.cat,x.spec)).join('')}</tbody></table></div>
+  <div class="card-b" id="pempty" style="display:${(DRAFT.pur||[]).length?'none':'block'}"><div class="empty"><b>لم تضف أصنافًا بعد</b>الصق قائمة احتياجاتك في المربع أعلاه ثم اضغط «تحويل النص إلى أصناف».</div></div></div>`;
 }
 function pLineRow(name,qty,unit,cat,spec){
   const id='pl'+uid();
   return `<tr id="${id}" class="plrow">
-    <td><input class="pl-name" value="${h(name)}" onchange="syncPLine(this)" list="itemlist"></td>
-    <td><input class="pl-qty" type="number" min="1" value="${qty}"></td>
-    <td><input class="pl-unit" value="${h(unit)}"></td><td><input class="pl-cat" value="${h(cat)}"></td>
-    <td><input class="pl-spec" value="${h(spec||'')}"></td>
-    <td><button class="btn ghost sm" onclick="document.getElementById('${id}').remove();syncPEmpty()">إزالة</button></td></tr>`;
+    <td><input class="pl-name" value="${h(name)}" onchange="syncPLine(this);saveDraftPur()" list="itemlist"></td>
+    <td><input class="pl-qty" type="number" min="1" value="${qty}" oninput="saveDraftPur()"></td>
+    <td><input class="pl-unit" value="${h(unit)}" oninput="saveDraftPur()"></td>
+    <td><input class="pl-cat" value="${h(cat)}" oninput="saveDraftPur()"></td>
+    <td><input class="pl-spec" value="${h(spec||'')}" oninput="saveDraftPur()"></td>
+    <td><button class="btn ghost sm" onclick="document.getElementById('${id}').remove();syncPEmpty();saveDraftPur()">إزالة</button></td></tr>`;
 }
 function syncPLine(inp){
   const tr=inp.closest('tr'),ins=tr.querySelectorAll('input');
@@ -1937,7 +2177,7 @@ function syncPEmpty(){
 function addPLine(name,qty,unit,cat,spec){
   document.getElementById('plines').insertAdjacentHTML('beforeend',
     pLineRow(name||'',qty||1,unit||'حبة',cat||'',spec||''));
-  syncPEmpty();
+  syncPEmpty();saveDraftPur();
 }
 function parsePaste(){
   const txt=document.getElementById('p_paste').value.trim();
@@ -1962,7 +2202,7 @@ function parsePaste(){
       pLineRow(name,qty,unit,known?known.cat:'',''));
     n++;
   });
-  document.getElementById('p_paste').value='';syncPEmpty();
+  document.getElementById('p_paste').value='';syncPEmpty();saveDraftPur();
   toast('حُوّل '+n+' سطرًا إلى أصناف قابلة للتعديل','ok');
 }
 function submitPurchase(){
@@ -2037,7 +2277,7 @@ function purChoice(mode){
 }
 function sendPurchase(lines,kind,note){
   withWindow(`سيُرسل طلب بـ ${lines.length} صنف إلى مدير المخزن للتصنيف والاعتماد.`,()=>{
-    const r=newReq('purchase',lines); r.kindHint=kind; r.note=note; r.status='classify'; save();
+    const r=newReq('purchase',lines); r.kindHint=kind; r.note=note; r.status='classify'; draftClear('pur'); save();
     toast('أُرسل طلب الشراء برقم '+r.no,'ok'); go('reqs');
   });
 }
@@ -3681,7 +3921,9 @@ function pgRegOut(){
 /* ================= المستخدمون والنوادي ================= */
 function pgUsers(){
   const pend=S.users.filter(u=>u.status==='pending');
-  const rows=S.users.map(u=>`<tr><td>${h(u.fullName)}</td><td class="mono">${h(u.username)}</td><td>${h(ROLES[u.role])}</td>
+  const rows=S.users.map(u=>`<tr>
+    ${can('admin')?`<td>${u.id!==ses.id?`<input type="checkbox" class="chk ub" data-id="${u.id}">`:''}</td>`:''}
+    <td>${h(u.fullName)}</td><td class="mono">${h(u.username)}</td><td>${h(ROLES[u.role])}</td>
     <td>${u.clubId?h(clubName(u.clubId)):'—'}</td><td class="mono">${h(u.phone)}</td>
     <td>${u.status==='approved'?'<span class="pill p-ok">مفعّل</span>':u.status==='pending'?'<span class="pill p-warn">بانتظار الاعتماد</span>'
       :u.status==='disabled'?'<span class="pill p-gray">معطّل</span>':'<span class="pill p-dan">مرفوض</span>'}</td>
@@ -3695,7 +3937,9 @@ function pgUsers(){
       <button class="btn ghost sm ibtn" title="سجل نشاط المستخدم" onclick="userLog('${u.id}')">&#128220;</button>
       ${can('admin')&&u.id!==ses.id?`<button class="btn dan sm ibtn" title="حذف المستخدم" onclick="delUser('${u.id}')">&#128465;</button>`:''}
     </td></tr>`).join('');
-  const clubs=S.clubs.map(c=>`<tr class="${c.frozen?'red':''}"><td>${h(c.name)}
+  const clubs=S.clubs.map(c=>`<tr class="${c.frozen?'red':''}">
+    ${can('admin')?`<td><input type="checkbox" class="chk cbx" data-id="${c.id}"></td>`:''}
+    <td>${h(c.name)}
     ${c.frozen?`<div class="red-txt" style="font-size:11.5px">مجمّد${c.freezeReason?': '+h(c.freezeReason):''}</div>`:''}</td>
     <td class="mono">${S.users.filter(u=>u.clubId===c.id).length}</td>
     <td class="mono">${S.custody.filter(x=>x.clubId===c.id&&x.status==='open').length}</td>
@@ -3715,11 +3959,21 @@ function pgUsers(){
     ${can('admin')?`<button class="btn gold" onclick="userForm()">إنشاء مستخدم</button>
     <button class="btn ghost" onclick="clubForm()">إضافة نادٍ</button>
     <button class="btn ghost" onclick="catsForm()">إدارة التصنيفات</button>`:''}</div>
-  <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>المستخدمون</h3></div><div class="tw">
-    <table id="tblU"><thead><tr><th>الاسم</th><th>اسم المستخدم</th><th>الدور</th><th>النادي</th><th>الهاتف</th>
-    <th>الحالة</th><th class="nos"></th></tr></thead><tbody>${rows}</tbody></table></div></div>
-  <div class="card"><div class="card-h"><h3>النوادي الثقافية</h3></div><div class="tw">
-    <table><thead><tr><th>النادي</th><th>عدد المستخدمين</th><th>عهد قائمة</th><th>حالة الطلبات</th><th class="nos"></th></tr></thead>
+  <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>المستخدمون</h3>
+    ${can('admin')?`<div style="margin-inline-start:auto;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn ghost sm" onclick="document.querySelectorAll('.ub').forEach(x=>x.checked=true)">تحديد الكل</button>
+      <button class="btn ghost sm" onclick="document.querySelectorAll('.ub').forEach(x=>x.checked=false)">إلغاء</button>
+      <button class="btn dan sm" onclick="bulkDelUsers()">&#128465; حذف المحدد</button></div>`:''}</div><div class="tw">
+    <table id="tblU"><thead><tr>${can('admin')?'<th class="nos"></th>':''}<th>الاسم</th><th>اسم المستخدم</th>
+    <th>الدور</th><th>النادي</th><th>الهاتف</th><th>الحالة</th><th class="nos"></th></tr></thead>
+    <tbody>${rows}</tbody></table></div></div>
+  <div class="card"><div class="card-h"><h3>النوادي الثقافية</h3>
+    ${can('admin')?`<div style="margin-inline-start:auto;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn ghost sm" onclick="document.querySelectorAll('.cbx').forEach(x=>x.checked=true)">تحديد الكل</button>
+      <button class="btn ghost sm" onclick="document.querySelectorAll('.cbx').forEach(x=>x.checked=false)">إلغاء</button>
+      <button class="btn dan sm" onclick="bulkDelClubs()">&#128465; حذف المحدد</button></div>`:''}</div><div class="tw">
+    <table><thead><tr>${can('admin')?'<th class="nos"></th>':''}<th>النادي</th><th>عدد المستخدمين</th>
+    <th>عهد قائمة</th><th>حالة الطلبات</th><th class="nos"></th></tr></thead>
     <tbody>${clubs}</tbody></table></div></div>`;
 }
 function userLog(id){
@@ -3757,6 +4011,43 @@ function userLog(id){
   <button class="btn ghost" onclick="exportTable('tblUL','سجل_نشاط_${h(u.username)}')">&#128202; Excel</button>
   <button class="btn ghost" onclick="closeModal()">إغلاق</button></div></div>`);
 }
+function bulkDelUsers(){
+  if(!can('admin'))return toast('حذف المستخدمين من صلاحية مدير النظام','dan');
+  const ids=[...document.querySelectorAll('.ub:checked')].map(x=>x.dataset.id).filter(id=>id!==ses.id);
+  if(!ids.length)return toast('حدّد مستخدمًا واحدًا على الأقل','dan');
+  const admins=S.users.filter(u=>u.role==='admin').length;
+  const delAdmins=ids.filter(id=>(S.users.find(u=>u.id===id)||{}).role==='admin').length;
+  if(admins-delAdmins<1)return toast('يجب بقاء حساب واحد على الأقل لمدير النظام','dan');
+  const names=ids.map(id=>(S.users.find(u=>u.id===id)||{}).fullName).filter(Boolean);
+  confirmBox('حذف المستخدمين',`<div class="note dan">سيتم حذف ${ids.length} مستخدم:<br><b>${h(names.join(' · '))}</b><br>
+    تبقى طلباتهم وسنداتهم وسجل التدقيق باسمهم.</div>`,()=>{
+    ids.forEach(id=>{
+      const u=S.users.find(x=>x.id===id); if(!u)return;
+      logIt('حذف مستخدم','مستخدم',u.username,u.fullName,'محذوف','حذف بواسطة '+ses.fullName);
+      S.users=S.users.filter(x=>x.id!==id);
+      S.resets=(S.resets||[]).filter(r=>r.userId!==id);
+    });
+    save();renderPage();toast('حُذف '+ids.length+' مستخدم','ok');
+  },'dan');
+}
+function bulkDelClubs(){
+  if(!can('admin'))return toast('حذف النوادي من صلاحية مدير النظام','dan');
+  const ids=[...document.querySelectorAll('.cbx:checked')].map(x=>x.dataset.id);
+  if(!ids.length)return toast('حدّد ناديًا واحدًا على الأقل','dan');
+  const blocked=ids.filter(id=>S.custody.some(c=>c.clubId===id&&c.status==='open'&&custRemain(c)>0));
+  const ok=ids.filter(id=>!blocked.includes(id));
+  if(!ok.length)return toast('النوادي المحددة عليها عهد قائمة، يجب إرجاعها أولًا','dan');
+  const names=ok.map(id=>clubName(id));
+  confirmBox('حذف النوادي',`<div class="note dan">سيتم حذف ${ok.length} نادٍ:<br><b>${h(names.join(' · '))}</b>
+    ${blocked.length?`<br>استُثني ${blocked.length} نادٍ عليه عهد قائمة.`:''}</div>`,()=>{
+    ok.forEach(id=>{
+      const c=S.clubs.find(x=>x.id===id); if(!c)return;
+      logIt('حذف نادٍ','نادٍ',c.name,'','محذوف','حذف بواسطة '+ses.fullName);
+      S.clubs=S.clubs.filter(x=>x.id!==id);
+    });
+    save();renderPage();toast('حُذف '+ok.length+' نادٍ','ok');
+  },'dan');
+}
 function delUser(id){
   if(!can('admin'))return toast('حذف المستخدمين من صلاحية مدير النظام','dan');
   const u=S.users.find(x=>x.id===id);
@@ -3773,15 +4064,13 @@ function delUser(id){
     ${reqs?`<div class="note dan">لهذا المستخدم ${reqs} طلب في النظام. الحذف يُبقي الطلبات والسندات وسجل التدقيق
       باسمه، ويمنع دخوله نهائيًا. إن أردت الإبقاء على حسابه فاستخدم «تعطيل» بدل الحذف.</div>`
       :`<div class="note dan">سيُحذف الحساب نهائيًا ولن يتمكن من الدخول.</div>`}
-    <div class="field" style="margin-top:12px"><label>سبب الحذف</label><input id="du_r" placeholder="إلزامي"></div>
   </div>
   <div class="mf"><button class="btn dan" onclick="doDelUser('${id}')">تأكيد الحذف</button>
   <button class="btn ghost" onclick="closeModal()">إلغاء</button></div></div>`);
 }
 function doDelUser(id){
   if(!can('admin'))return toast('صلاحية غير كافية','dan');
-  const rs=(document.getElementById('du_r').value||'').trim();
-  if(!rs)return toast('سبب الحذف إلزامي','dan');
+  const rs='حذف بواسطة '+ses.fullName;
   const u=S.users.find(x=>x.id===id); if(!u)return;
   logIt('حذف مستخدم','مستخدم',u.username,u.fullName+' — '+ROLES[u.role],'محذوف',rs);
   S.users=S.users.filter(x=>x.id!==id);
@@ -3802,15 +4091,13 @@ function delClub(id){
     ${users||reqs?`<div class="note dan">للنادي ${users} مستخدم و${reqs} طلب. الحذف يُبقي الطلبات والسندات في السجل،
       وحسابات مستخدميه تبقى بلا نادٍ. البديل الأفضل: «تجميد النادي» عن الطلبات.</div>`
       :`<div class="note dan">سيُحذف النادي نهائيًا من القوائم.</div>`}
-    <div class="field" style="margin-top:12px"><label>سبب الحذف</label><input id="dc_r" placeholder="إلزامي"></div>
   </div>
   <div class="mf"><button class="btn dan" onclick="doDelClub('${id}')">تأكيد الحذف</button>
   <button class="btn ghost" onclick="closeModal()">إلغاء</button></div></div>`);
 }
 function doDelClub(id){
   if(!can('admin'))return toast('صلاحية غير كافية','dan');
-  const rs=(document.getElementById('dc_r').value||'').trim();
-  if(!rs)return toast('سبب الحذف إلزامي','dan');
+  const rs='حذف بواسطة '+ses.fullName;
   const c=S.clubs.find(x=>x.id===id); if(!c)return;
   logIt('حذف نادٍ','نادٍ',c.name,'','محذوف',rs);
   S.clubs=S.clubs.filter(x=>x.id!==id);
@@ -5146,8 +5433,12 @@ function pgDamages(){
 }
 /* ================= رسائل النوادي ================= */
 function pgMsgs(){
-  const rows=S.msgs.map(m=>`<tr><td>${fmtDT(m.ts)}</td><td>${m.clubId?h(clubName(m.clubId)):'جميع النوادي'}</td>
-    <td style="text-align:right">${h(m.text)}</td><td>${h(m.by)}</td></tr>`).join('');
+  const inbox=myMsgs();
+  const out=S.msgs.filter(m=>m.from!=='club');
+  const rows=out.map(m=>`<tr><td>${fmtDT(m.ts)}</td><td>${m.clubId?h(clubName(m.clubId)):'جميع النوادي'}</td>
+    <td style="text-align:right">${h(m.text)}</td><td>${h(m.by)}</td>
+    <td>${(m.read||[]).length?'<span class="pill p-ok">قُرئت</span>':'<span class="pill p-warn">لم تُقرأ</span>'}</td></tr>`).join('');
+  const pn=(S.settings.publicNotice||{});
   return `<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>إرسال رسالة إلى النوادي</h3></div>
   <div class="card-b">
     <div class="row">
@@ -5157,15 +5448,44 @@ function pgMsgs(){
     </div>
     <div class="field"><label>نص الرسالة</label><textarea id="m_txt" placeholder="تظهر الرسالة في تنبيهات النادي"></textarea></div>
     <button class="btn gold" onclick="sendMsg()">إرسال الرسالة</button></div></div>
+  <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>إعلان يظهر في صفحة الدخول</h3>
+    ${pn.active?'<span class="pill p-ok">ظاهر الآن</span>':'<span class="pill p-gray">مخفي</span>'}</div>
+  <div class="card-b">
+    <div class="field"><label>نص الإعلان (يراه الجميع قبل تسجيل الدخول)</label>
+      <textarea id="pn_txt" placeholder="مثال: تُستقبل الطلبات من الأحد إلى الثلاثاء 4:00 عصرًا">${h(pn.text||'')}</textarea></div>
+    <div class="row"><div class="field"><label>الحالة</label><select id="pn_on">
+      <option value="1" ${pn.active?'selected':''}>إظهار في صفحة الدخول</option>
+      <option value="0" ${!pn.active?'selected':''}>إخفاء</option></select></div></div>
+    <button class="btn gold" onclick="savePublicNotice()">حفظ الإعلان</button></div></div>
+
+  <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>الوارد من النوادي</h3>
+    ${unreadMsgs()?`<span class="pill p-dan">${unreadMsgs()} غير مقروءة</span>
+    <button class="btn ghost sm" style="margin-inline-start:auto" onclick="readAllMsgs()">تحديد الكل كمقروء</button>`:''}</div>
+    <div class="card-b" style="padding:0">
+    ${inbox.length?inbox.slice(0,40).map(m=>{
+      const un=!(m.read||[]).includes(ses.id);
+      return `<div style="padding:12px 16px;border-bottom:1px solid var(--line2);${un?'background:var(--gold-l)':''}">
+        <div style="font-weight:${un?'700':'400'}">${h(m.text)}</div>
+        <div style="color:var(--ink3);font-size:12.5px;margin-top:4px">${h(m.by||'')} — ${fmtDT(m.ts)}
+        ${un?`<button class="btn gold sm" style="margin-inline-start:8px" onclick="readMsg('${m.id}')">&#10003; تمت القراءة</button>`:''}</div></div>`}).join('')
+      :`<div class="empty"><b>لا توجد رسائل واردة</b>ستصلك هنا رسائل النوادي.</div>`}
+    </div></div>
+
   <div class="card"><div class="card-h"><h3>الرسائل المرسلة</h3>
     <button class="btn ghost sm" style="margin-inline-start:auto" onclick="exportTable('tblMs','رسائل_النوادي')">&#128202; تنزيل Excel</button></div>
-    <div class="tw"><table id="tblMs"><thead><tr><th>التاريخ</th><th>النادي</th><th>الرسالة</th><th>المرسل</th></tr></thead>
-    <tbody>${rows||`<tr><td colspan="4"><div class="empty"><b>لم تُرسل رسائل بعد</b></div></td></tr>`}</tbody></table></div></div>`;
+    <div class="tw"><table id="tblMs"><thead><tr><th>التاريخ</th><th>النادي</th><th>الرسالة</th><th>المرسل</th><th>الحالة</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="5"><div class="empty"><b>لم تُرسل رسائل بعد</b></div></td></tr>`}</tbody></table></div></div>`;
+}
+function savePublicNotice(){
+  S.settings.publicNotice={text:(document.getElementById('pn_txt').value||'').trim(),
+    active:document.getElementById('pn_on').value==='1'};
+  logIt('تعديل إعلان صفحة الدخول','إعدادات','','',S.settings.publicNotice.active?'ظاهر':'مخفي');
+  save();renderPage();toast('حُفظ الإعلان','ok');
 }
 function sendMsg(){
   const cid=document.getElementById('m_club').value,t=document.getElementById('m_txt').value.trim();
   if(!t)return toast('اكتب نص الرسالة','dan');
-  S.msgs.unshift({id:uid(),ts:nowISO(),clubId:cid||null,text:t,by:ses.fullName});
+  S.msgs.unshift({id:uid(),ts:nowISO(),clubId:cid||null,text:t,by:ses.fullName,from:'admin',read:[],popup:true});
   if(cid)notify('رسالة من الإدارة: '+t,'club',cid);
   else S.clubs.forEach(c=>notify('رسالة من الإدارة: '+t,'club',c.id));
   logIt('إرسال رسالة','رسالة',cid?clubName(cid):'جميع النوادي','',t.slice(0,60));
