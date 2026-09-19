@@ -187,7 +187,7 @@ tr.red td{background:#FDF2F1}
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .top{background:var(--surface);border-bottom:1px solid var(--line);padding:12px 22px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:40}
 .top h1{margin:0;font-size:18px;font-weight:700}
-.top .who{margin-inline-start:auto;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink2)}
+/* شريط علوي مرن */
 .avatar{width:34px;height:34px;border-radius:9px;background:var(--gold-l);color:var(--gold-d);display:grid;place-items:center;font-weight:800}
 .burger{display:none;background:none;border:1px solid var(--line);border-radius:8px;padding:6px 9px;cursor:pointer}
 .page{padding:22px;max-width:1400px;width:100%}
@@ -376,7 +376,19 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
 .tabs-auth,.lgtabs{background:var(--muted-bg)}
 .lgtabs button.on{background:var(--surface);color:var(--navy)}
 .lgcard{background:var(--surface);border-radius:var(--r)}
-.top{background:var(--surface);border-bottom-color:var(--line)}
+.top{background:var(--surface);border-bottom-color:var(--line);flex-wrap:wrap}
+.who{flex-wrap:wrap;justify-content:flex-end;order:3}
+.top{gap:12px}
+.top .tools{order:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.top h1{order:2;flex:1;text-align:center;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .who .uinfo{display:flex;flex-direction:column;align-items:flex-end;line-height:1.4}
+.top .who .uinfo b{color:var(--ink);font-size:13.5px}
+.top .who .uinfo small{color:var(--ink3);font-size:12px}
+@media(max-width:760px){
+  .top h1{order:3;flex:1 0 100%;text-align:right;font-size:16px}
+  .top .tools{order:2;flex:1;justify-content:flex-start}
+  .top .who{order:1}
+}
 .side{background:var(--side);color:var(--side-ink)}
 .side-head,.side-foot{border-color:rgba(255,255,255,.08)}
 .gline:hover,.sub a:hover,.sub2 a:hover,.gline.on,.sub a.on,.sub2 a.on{background:var(--side2)}
@@ -590,9 +602,7 @@ function pgClubMsgs(){
   <div class="card-b">
     <div class="row">
       <div class="field"><label>المرسل إليه</label><select id="cm_to">
-        <option value="keeper">أمين المخزن</option>
-        <option value="admin">مدير النظام</option>
-        <option value="all">الإدارة وأمين المخزن</option></select></div>
+        <option value="keeper">أمين المخزن</option></select></div>
     </div>
     <div class="field"><label>نص الرسالة</label><textarea id="cm_txt" placeholder="اكتب رسالتك"></textarea></div>
     <button class="btn gold" onclick="sendClubMsg()">إرسال</button></div></div>
@@ -613,7 +623,7 @@ function sendClubMsg(){
   const to=document.getElementById('cm_to').value,t=(document.getElementById('cm_txt').value||'').trim();
   if(!t)return toast('اكتب نص الرسالة','dan');
   S.msgs.unshift({id:uid(),ts:nowISO(),clubId:ses.clubId,text:t,by:ses.fullName+' — '+clubName(ses.clubId),
-    from:'club',toRole:to,read:[],popup:false});
+    from:'club',toRole:'keeper',read:[],popup:true});
   notify('رسالة من '+clubName(ses.clubId)+': '+t,to==='admin'?'admin':'keeper');
   if(to!=='keeper')notify('رسالة من '+clubName(ses.clubId)+': '+t,'manager');
   logIt('إرسال رسالة','رسالة',to,'',t.slice(0,60));
@@ -739,27 +749,81 @@ function can(...roles){
   if(roles.includes(ses.role))return true;
   return ses.role==='supervisor'&&roles.includes('keeper');
 }
+let REALME=null;
+function isActing(){return !!REALME}
 function actAs(role){
   if(!ses)return;
-  if(!ses.origRole){ses.origRole=ses.role;ses.origClub=ses.clubId}
-  ses.role=role;
-  if(role==='club'&&!ses.clubId)ses.clubId=S.clubs[0]?S.clubs[0].id:null;
-  if(role!=='club'&&ses.origRole==='admin')ses.clubId=null;
-  route='dash';closeModal();render();
+  const base=REALME||ses;
+  if(base.role!=='admin')return toast('التنقل بين الأدوار لمدير النظام','dan');
+  REALME=base;
+  const club=role==='club'?(S.clubs[0]?S.clubs[0].id:null):null;
+  ses=Object.assign({},base,{role,clubId:club,__act:true});
+  route='dash';closeModal();draftLoad();render();
   toast('تعمل الآن بدور: '+ROLES[role],'ok');
 }
+function actAsUser(id){
+  const base=REALME||ses;
+  if(base.role!=='admin')return toast('التنقل بين المستخدمين لمدير النظام','dan');
+  const u=S.users.find(x=>x.id===id);
+  if(!u)return toast('المستخدم غير موجود','dan');
+  if(u.status!=='approved')return toast('حساب المستخدم غير مفعّل','dan');
+  REALME=base;
+  ses=Object.assign({},u,{__imp:true});
+  route='dash';closeModal();draftLoad();render();
+  toast('تعمل الآن باسم: '+u.fullName+' — '+ROLES[u.role]+(u.clubId?' · '+clubName(u.clubId):''),'ok');
+}
 function backToSelf(){
-  if(!ses.origRole)return;
-  ses.role=ses.origRole;ses.clubId=ses.origClub||null;ses.origRole=null;
-  route='dash';render();toast('عدت إلى دورك الأصلي','ok');
+  if(!REALME)return;
+  ses=REALME;REALME=null;
+  route='dash';draftLoad();render();toast('عدت إلى حسابك: '+ses.fullName,'ok');
 }
 function switchRoleModal(){
-  modal(`<div class="modal sm"><div class="mh"><h3>التنقل بين الأدوار</h3><button onclick="closeModal()">&times;</button></div>
-  <div class="mb"><div class="note info">يتيح لمدير النظام معاينة النظام بعين كل دور دون تغيير بياناته.</div>
-  <div style="display:grid;gap:8px;margin-top:12px">
-    ${Object.keys(ROLES).filter(r=>r!=='admin').map(r=>`<button class="btn ghost" onclick="actAs('${r}')">${ROLES[r]}</button>`).join('')}
-    ${ses.origRole?`<button class="btn gold" onclick="closeModal();backToSelf()">العودة إلى ${ROLES[ses.origRole]}</button>`:''}
-  </div></div></div>`);
+  const base=REALME||ses;
+  if(base.role!=='admin')return toast('هذه الخاصية لمدير النظام','dan');
+  const users=S.users.filter(u=>u.status==='approved'&&u.id!==base.id);
+  const byRole={};
+  users.forEach(u=>{(byRole[u.role]=byRole[u.role]||[]).push(u)});
+  modal(`<div class="modal"><div class="mh"><h3>&#8646; التنقل بين المستخدمين والأدوار</h3>
+    <button onclick="closeModal()">&times;</button></div>
+  <div class="mb">
+    ${REALME?`<div class="note dan">أنت الآن باسم <b>${h(ses.fullName)}</b> (${h(ROLES[ses.role])}${ses.clubId?' · '+h(clubName(ses.clubId)):''}).
+      <button class="btn gold sm" style="margin-inline-start:8px" onclick="closeModal();backToSelf()">العودة إلى حسابك</button></div>`
+      :`<div class="note info">ادخل بعين أي مستخدم لمعاينة ما يراه أو لإتمام إجراء نيابة عنه، وبياناته لا تتغير.
+        العمليات التي تنفّذها تُسجَّل باسم المستخدم الذي تعمل باسمه.</div>`}
+    <div class="field" style="margin-top:12px"><label>بحث عن مستخدم</label>
+      <input id="imp_q" type="text" placeholder="الاسم أو اسم المستخدم أو النادي" oninput="renderImp()"></div>
+    <div id="imp_list" style="max-height:44vh;overflow:auto">${impList('')}</div>
+    <div class="sec-title">أو معاينة بدور فقط</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      ${Object.keys(ROLES).filter(r=>r!=='admin').map(r=>`<button class="btn ghost sm" onclick="actAs('${r}')">${ROLES[r]}</button>`).join('')}
+    </div>
+  </div></div>`);
+}
+function impList(q){
+  q=String(q||'').trim().toLowerCase();
+  const base=REALME||ses;
+  const users=S.users.filter(u=>u.status==='approved'&&u.id!==base.id&&
+    (!q||(u.fullName+' '+u.username+' '+(u.clubId?clubName(u.clubId):'')).toLowerCase().includes(q)));
+  if(!users.length)return `<div class="empty"><b>لا يوجد مستخدم مطابق</b></div>`;
+  const order=['manager','supervisor','keeper','club','admin'];
+  return order.map(r=>{
+    const list=users.filter(u=>u.role===r);
+    if(!list.length)return '';
+    return `<div class="sec-title">${h(ROLES[r])} (${list.length})</div>
+      <div class="card" style="margin-bottom:8px"><div class="card-b" style="padding:6px">
+      ${list.map(u=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;cursor:pointer"
+        onmouseover="this.style.background='var(--hover)'" onmouseout="this.style.background=''"
+        onclick="actAsUser('${u.id}')">
+        <div class="avatar" style="width:30px;height:30px;border-radius:9px">${h(u.fullName.trim()[0]||'؟')}</div>
+        <div style="flex:1"><div style="font-weight:700">${h(u.fullName)}</div>
+        <div style="font-size:12.5px;color:var(--ink3)">${h(u.username)}${u.clubId?' · '+h(clubName(u.clubId)):''}</div></div>
+        <span class="pill p-gold">دخول باسمه</span></div>`).join('')}
+      </div></div>`;
+  }).join('');
+}
+function renderImp(){
+  const b=document.getElementById('imp_list');
+  if(b){b.innerHTML=impList((document.getElementById('imp_q')||{}).value);arabize(b)}
 }
 function navOk(roles){return roles.includes(ses.role)||(ses.role==='supervisor'&&roles.includes('keeper'))}
 function itemById(id){return S.items.find(i=>i.id===id)}
@@ -841,6 +905,30 @@ function forgotForm(){
     <a onclick="authTab='login';renderAuth()">العودة إلى تسجيل الدخول</a></div>
   <div class="lghint">لا يعرض النظام كلمة المرور القديمة ولا يخزّنها كنص ظاهر؛ يُحال الطلب إلى مدير النظام لإنشاء كلمة مرور جديدة.</div>`;
 }
+function recoverAdminModal(){
+  const rows=S.users.map(u=>`<tr><td>${h(u.fullName)}</td><td class="mono">${h(u.username)}</td>
+    <td>${h(ROLES[u.role]||u.role)}</td><td>${u.clubId?h(clubName(u.clubId)):'—'}</td>
+    <td>${u.status==='approved'?'<span class="pill p-ok">مفعّل</span>':'<span class="pill p-warn">'+h(u.status)+'</span>'}</td>
+    <td><button class="btn dan sm" onclick="doRecoverAdmin('${u.id}')">اجعله مدير النظام</button></td></tr>`).join('');
+  modal(`<div class="modal lg"><div class="mh"><h3>استعادة صلاحية مدير النظام</h3><button onclick="closeModal()">&times;</button></div>
+  <div class="mb">
+    <div class="note dan">تُستخدم عند فقد صلاحية مدير النظام. اختر الحساب لإعادة دوره إلى «مدير النظام»
+      وتفعيله وفك ارتباطه بأي نادٍ، وتُسجَّل العملية في سجل التدقيق.</div>
+    <div class="tw" style="margin-top:12px;max-height:50vh"><table><thead><tr><th class="nos">الاسم</th>
+      <th class="nos">اسم المستخدم</th><th class="nos">الدور الحالي</th><th class="nos">النادي</th>
+      <th class="nos">الحالة</th><th class="nos"></th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>
+  <div class="mf"><button class="btn ghost" onclick="closeModal()">إغلاق</button></div></div>`);
+}
+function doRecoverAdmin(id){
+  const u=S.users.find(x=>x.id===id); if(!u)return;
+  const before=ROLES[u.role]||u.role;
+  u.role='admin';u.clubId=null;u.status='approved';
+  delete u.origRole;delete u.origClub;
+  logIt('استعادة صلاحية مدير النظام','مستخدم',u.username,before,'مدير النظام','من شاشة الاستعادة');
+  save();closeModal();
+  toast('أصبح «'+u.fullName+'» مدير النظام — سجّل الدخول باسم '+u.username,'ok');
+}
 function doLogin(){
   const u=document.getElementById('lu').value.trim(), p=document.getElementById('lp').value;
   const usr=S.users.find(x=>x.username===u);
@@ -889,6 +977,7 @@ function doForgot(){
   save();toast('أُرسل الطلب إلى مدير النظام للتحقق','ok');authTab='login';renderAuth();
 }
 function myPassModal(){
+  if(isActing())return toast('لا يمكن تغيير كلمة المرور أثناء العمل باسم مستخدم آخر','dan');
   modal(`<div class="modal sm"><div class="mh"><h3>تغيير كلمة المرور</h3><button onclick="closeModal()">&times;</button></div>
   <div class="mb">
     <div class="field"><label>كلمة المرور الحالية</label><input id="p_old" type="password"></div>
@@ -909,8 +998,9 @@ function saveMyPass(){
   save();closeModal();toast('حُدّثت كلمة المرور','ok');
 }
 function logout(){
+  if(isActing())return backToSelf();
   confirmBox('تسجيل الخروج','هل تريد الخروج من النظام؟',()=>{
-    AU={idToken:'',refresh:'',exp:0,email:'',err:''};clearInterval(SY.timer);
+    AU={idToken:'',refresh:'',exp:0,email:'',err:''};clearInterval(SY.timer);REALME=null;
     logIt('تسجيل خروج','مستخدم',ses.username);save();ses=null;authTab='login';renderAuth();
   },'dan');
 }
@@ -919,9 +1009,6 @@ function logout(){
 const NAV=[
   {key:'home',g:'الرئيسية',icon:'&#127968;',flat:'dash',items:[
     {k:'dash',t:'لوحة التحكم',full:'لوحة التحكم',roles:['club','keeper','manager','admin']}
-  ]},
-  {key:'guide',g:'دليل الاستخدام',icon:'&#128214;',flat:'guide',items:[
-    {k:'guide',t:'دليل الاستخدام',full:'دليل استخدام النظام',roles:['admin']}
   ]},
   {key:'stock',g:'المخزون',icon:'&#128230;',items:[
     {k:'assets',t:'المواد الثابتة',full:'الأصول الثابتة',roles:['keeper','manager','admin']},
@@ -933,7 +1020,7 @@ const NAV=[
     {k:'purchase',t:'طلب شراء',full:'طلب شراء موحّد',roles:['club','admin']},
     {k:'newasset',t:'طلب مواد ثابتة',full:'طلب أصول ثابتة (عهدة)',roles:['club','admin']},
     {k:'newcons',t:'طلب مواد استهلاكية',full:'طلب مواد استهلاكية',roles:['club','admin']},
-    {k:'reqs',t:'متابعة الطلبات',full:'متابعة الطلبات',roles:['club','keeper','manager','admin']},
+    {k:'reqs',t:'متابعة الطلبات',full:'متابعة الطلبات',roles:['club','keeper','manager','admin'],count:'reqs'},
     {k:'custody',t:'عهد ناديكم',full:'العهد',roles:['club']},
     {k:'vouchers',t:'سندات ناديكم',full:'السندات',roles:['club']}
   ]},
@@ -942,7 +1029,7 @@ const NAV=[
   ]},
   {key:'logs',g:'السجلات',icon:'&#128203;',items:[
     {k:'vouchers',t:'السندات',full:'السندات',roles:['keeper','manager','admin']},
-    {k:'custody',t:'العهد',full:'العهد',roles:['keeper','manager','admin']},
+    {k:'custody',t:'العهد',full:'العهد',roles:['keeper','manager','admin'],count:'custody'},
     {k:'regout',t:'سجل الصرف والعهد',full:'سجل الصرف والعهد',roles:['keeper','manager','admin']},
     {k:'damages',t:'الأصول التالفة',full:'الأصول التالفة',roles:['keeper','manager','admin']},
     {k:'trail',t:'سجل التدقيق',full:'سجل التدقيق الشامل',roles:['manager','admin']}
@@ -953,13 +1040,12 @@ const NAV=[
   ]},
   {key:'admin',g:'الإعدادات',icon:'&#9881;',items:[
     {k:'settings',t:'الإعدادات والنسخ',full:'الإعدادات والنسخ والمزامنة',roles:['admin','manager']},
-    {k:'users',t:'المستخدمون والنوادي',full:'المستخدمون والنوادي',roles:['admin','manager'],count:'users'},
+    {k:'users',t:'المستخدمون والنوادي',full:'المستخدمون والنوادي',roles:['admin','manager']},
     {k:'msgs',t:'رسائل النوادي',full:'رسائل النوادي',roles:['manager','admin']}
   ]}
 ];
 function navCount(kind){
   if(kind==='msgs')return unreadMsgs();
-  return 0;
   if(kind==='reqs'){
     const rs=scopedReqs();
     if(ses.role==='club')return rs.filter(r=>!['closed','rejected'].includes(r.status)).length;
@@ -1168,31 +1254,39 @@ function render(){
         <div class="txt" style="flex:1"><b>${h(S.settings.appName)}</b><small>${h(S.settings.warehouse)}</small></div>
         <button class="mini-toggle" onclick="toggleMini()" title="${navMini?'توسيع القائمة':'تصغير القائمة'}">${navMini?'&#9776;':'&#10094;'}</button>
       </div>
-      <div class="navsearch"><span class="si">&#128269;</span>
-        <input id="navQ" type="text" placeholder="بحث في الصفحات" value="${h(navQuery)}" oninput="navSearch(this.value)"></div>
       <nav class="nav" id="navList">${navHtml()}
-        <div style="margin:14px 6px 0"><button class="btn-out" onclick="logout()">
+        ${(ses.role==='admin'||isActing())?`<div style="margin:14px 6px 0">
+          <button class="btn gold" style="width:100%" onclick="switchRoleModal()">&#8646; التنقل بين المستخدمين</button></div>`:''}
+        <div style="margin:10px 6px 0"><button class="btn-out" onclick="logout()">
           <span>&#9099; تسجيل الخروج</span></button></div></nav>
     </aside>
     <div class="main">
       <header class="top">
         <button class="burger" onclick="sideOpen=!sideOpen;render()">☰</button>
-        <h1>${h(pageTitle())}</h1>
-        <div class="who">
-          <span id="syncChip">${syncChip()}</span>
-          <div style="text-align:left"><div style="font-weight:700;color:var(--ink)">${h(ses.fullName)}</div>
-          <div>${h(ROLES[ses.role])}${ses.clubId?' · '+h(clubName(ses.clubId)):''}</div></div>
+        <div class="tools">
           <button class="theme-btn" title="بحث شامل في النظام" onclick="searchModal()">&#128269;</button>
           <button class="theme-btn" id="refreshBtn" title="تحديث البيانات دون الخروج" onclick="refreshNow()">&#8635;</button>
           <button class="theme-btn" id="themeBtn" title="الوضع الليلي / النهاري"
             onclick="toggleTheme()">${theme==='dark'?'&#9728;':'&#9789;'}</button>
-          ${(ses.role==='admin'||ses.origRole)?`<button class="btn ghost sm" title="التنقل بين الأدوار"
-            onclick="switchRoleModal()">&#8646; الأدوار</button>`:''}
-          ${ses.origRole?`<button class="btn gold sm" onclick="backToSelf()">عودة لمدير النظام</button>`:''}
+          <span id="syncChip">${syncChip()}</span>
+          ${(ses.role==='admin'||isActing())?`<button class="btn gold sm" title="التنقل بين المستخدمين والأدوار"
+            onclick="switchRoleModal()">&#8646; التنقل بين المستخدمين</button>`:''}
+          ${isActing()?`<button class="btn gold sm" onclick="backToSelf()">عودة لحسابك</button>`:''}
+        </div>
+        <h1>${h(pageTitle())}</h1>
+        <div class="who">
+          <div class="uinfo"><b>${h(ses.fullName)}</b>
+            <small>${h(ROLES[ses.role])}${ses.clubId?' · '+h(clubName(ses.clubId)):''}</small></div>
           <button class="avatar" style="border:0;cursor:pointer" title="تغيير كلمة المرور"
             onclick="myPassModal()">${h(ses.fullName.trim()[0]||'؟')}</button>
         </div>
       </header>
+      ${isActing()?`<div style="background:var(--dan);color:#fff;padding:7px 18px;font-size:13.5px;
+        display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span>&#9888; تعمل الآن باسم <b>${h(ses.fullName)}</b> (${h(ROLES[ses.role])}${ses.clubId?' · '+h(clubName(ses.clubId)):''})
+        — كل إجراء يُسجَّل باسمه.</span>
+        <button class="btn ghost sm" style="margin-inline-start:auto" onclick="backToSelf()">العودة إلى حسابك (${h(REALME.fullName)})</button>
+      </div>`:''}
       <div class="page" id="page"></div>
     </div></div>`;
   renderPage();
@@ -1401,6 +1495,13 @@ function draftCounts(){
   return {cons:Object.keys(DRAFT.cons||{}).length,asset:Object.keys(DRAFT.asset||{}).length,
     pur:(DRAFT.pur||[]).length};
 }
+function draftBtns(){
+  if(!ses||ses.role!=='club')return '';
+  const c=draftCounts(),tot=c.cons+c.asset+c.pur;
+  if(!tot)return '';
+  return `<button class="btn gold sm" onclick="sendAllDrafts()">&#128228; إرسال جميع طلباتك (${tot})</button>
+    <button class="btn ghost sm" onclick="clearAllDrafts()">مسح المُعد</button>`;
+}
 function draftBar(){
   if(!ses||ses.role!=='club')return '<span id="draftBar"></span>';
   const c=draftCounts(),tot=c.cons+c.asset+c.pur;
@@ -1453,7 +1554,8 @@ function sendAllDrafts(){
       made.push(r.no);draftClear('asset');
     }
     if(pur.length){const r=newReq('purchase',pur);r.status='classify';r.kindHint='mixed';made.push(r.no);draftClear('pur')}
-    save();renderPage();toast('أُرسلت الطلبات: '+made.join(' ، '),'ok');go('reqs');
+    S.lastSent={by:ses.id,ts:nowISO(),nos:made};
+    save();toast('أُرسلت الطلبات: '+made.join(' ، '),'ok');go('reqs');
   });
 }
 function pgCons(){return consManageView()}
@@ -1484,9 +1586,10 @@ function consOrderView(){
   <div class="note info" style="margin-bottom:14px">المواد الاستهلاكية تُصرف ولا تُسجّل عهدة على النادي ولا يُطلب إرجاعها. إذا لم تجد المادة، أنشئ
     <a onclick="go('purchase')" style="cursor:pointer;font-weight:700">طلب شراء</a>.</div>
   <div class="card"><div class="card-h"><h3>طلب مواد استهلاكية من المخزن</h3>
-    <div style="margin-inline-start:auto;display:flex;gap:8px">
+    <div style="margin-inline-start:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input type="text" placeholder="بحث في المواد" oninput="filterTable(this,'tblCons')">
-      <button class="btn gold" onclick="submitConsReq()">إرسال الطلب</button></div></div>
+      <button class="btn gold" onclick="submitConsReq()">إرسال الطلب</button>
+      ${draftBtns()}</div></div>
   <div class="tw"><table id="tblCons"><thead><tr><th class="nos"></th><th>الرقم</th><th>المادة</th><th>التصنيف</th>
     <th>الوحدة</th><th>الرصيد المتوفر</th><th>المتاح لناديكم</th><th class="nos">الكمية المطلوبة</th>
     <th class="nos">ملاحظات</th></tr></thead>
@@ -1524,7 +1627,8 @@ function submitConsReq(){
   if(lines===null)return;
   if(!lines.length)return toast('اختر مادة واحدة على الأقل','dan');
   withWindow(`سيُرسل طلب بـ ${lines.length} صنف إلى مدير المخزن.`,()=>{
-    const r=newReq('consumable',lines); draftClear('cons'); toast('أُرسل الطلب برقم '+r.no,'ok'); go('reqs');
+    const r=newReq('consumable',lines); draftClear('cons'); S.lastSent={by:ses.id,ts:nowISO(),nos:[r.no]};
+    save(); toast('أُرسل الطلب برقم '+r.no,'ok'); go('reqs');
   });
 }
 function newReq(kind,lines){
@@ -1856,7 +1960,7 @@ function doDelSelected(kind,idsStr){
     addMove(hasHist?'أرشفة صنف':'حذف صنف',kind==='item'?'مادة استهلاكية':'أصل ثابت',o.name,-num(o.qty),o.qty,0,rs,o.code);
     logIt(hasHist?'أرشفة صنف':'حذف صنف',kind==='item'?'مادة':'أصل',o.code,o.name+' — رصيد '+o.qty,hasHist?'مؤرشف':'محذوف',rs);
     if(hasHist){o.active=false;o.archivedAt=nowISO();o.archiveReason=rs;arch++}
-    else{arr.splice(arr.indexOf(o),1);del++}
+    else{tomb(kind==='item'?'items':'assets',o.id);arr.splice(arr.indexOf(o),1);del++}
     if(S.quota&&S.quota[id])delete S.quota[id];
   });
   save();closeModal();renderPage();
@@ -1891,7 +1995,7 @@ function doDelItem(kind,id,archive){
   addMove(archive?'أرشفة صنف':'حذف صنف',kind==='item'?'مادة استهلاكية':'أصل ثابت',o.name,-num(o.qty),o.qty,0,rs,o.code);
   logIt(archive?'أرشفة صنف':'حذف صنف',kind==='item'?'مادة':'أصل',o.code,o.name+' — رصيد '+o.qty,archive?'مؤرشف':'محذوف',rs);
   if(archive){o.active=false;o.archivedAt=nowISO();o.archiveReason=rs}
-  else arr.splice(arr.indexOf(o),1);
+  else {tomb(kind==='item'?'items':'assets',o.id);arr.splice(arr.indexOf(o),1)}
   if(S.quota&&S.quota[id])delete S.quota[id];
   save();closeModal();renderPage();toast(archive?'أُرشف الصنف':'حُذف الصنف','ok');
 }
@@ -1969,9 +2073,10 @@ function assetOrderView(){
   ${mine.length?`<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>عهد مسجّلة على ناديك (${mine.length})</h3>
     <button class="btn ghost sm" style="margin-inline-start:auto" onclick="go('custody')">إدارة العهد وطلب الإرجاع</button></div></div>`:''}
   <div class="card"><div class="card-h"><h3>طلب أصول ثابتة (عهدة)</h3>
-    <div style="margin-inline-start:auto;display:flex;gap:8px">
+    <div style="margin-inline-start:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input type="text" placeholder="بحث في الأصول" oninput="filterTable(this,'tblA')">
-      <button class="btn gold" onclick="submitAssetReq()">إرسال الطلب</button></div></div>
+      <button class="btn gold" onclick="submitAssetReq()">إرسال الطلب</button>
+      ${draftBtns()}</div></div>
   <div class="tw"><table id="tblA"><thead><tr><th class="nos"></th><th>رقم الأصل</th><th>الأصل</th><th>التصنيف</th>
     <th>الوحدة</th><th>الرصيد المتاح</th><th class="nos">الكمية</th><th class="nos">ملاحظات</th></tr></thead>
     <tbody>${rows||`<tr><td colspan="8"><div class="empty"><b>لا توجد أصول</b>لم يُسجل أي أصل ثابت بعد.</div></td></tr>`}</tbody></table></div></div>`;
@@ -1984,7 +2089,8 @@ function submitAssetReq(){
   const dups=lines.map(l=>({l,d:dupInfo(ses.clubId,l.refId)})).filter(x=>x.d);
   if(dups.length)return dupWarnModal(dups,lines);
   withWindow(`سيُرسل طلب عهدة بـ ${lines.length} أصل إلى مدير المخزن.`,()=>{
-    const r=newReq('asset',lines); draftClear('asset'); toast('أُرسل الطلب برقم '+r.no,'ok'); go('reqs');
+    const r=newReq('asset',lines); draftClear('asset'); S.lastSent={by:ses.id,ts:nowISO(),nos:[r.no]};
+    save(); toast('أُرسل الطلب برقم '+r.no,'ok'); go('reqs');
   });
 }
 function dupWarnModal(dups,lines){
@@ -2145,7 +2251,9 @@ function pgPurchase(){
   </div></div>
 
   <div class="card"><div class="card-h"><h3>أصناف الطلب</h3>
-    <button class="btn gold" style="margin-inline-start:auto" onclick="submitPurchase()">إرسال طلب الشراء</button></div>
+    <div style="margin-inline-start:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button class="btn gold" onclick="submitPurchase()">إرسال طلب الشراء</button>
+      ${draftBtns()}</div></div>
   <div class="tw"><table id="ptbl"><thead><tr><th class="nos">الصنف</th><th class="nos">الكمية</th><th class="nos">الوحدة</th>
     <th class="nos">التصنيف</th><th class="nos">مواصفات</th><th class="nos"></th></tr></thead>
     <tbody id="plines">${(DRAFT.pur||[]).map(x=>pLineRow(x.name,x.qty,x.unit,x.cat,x.spec)).join('')}</tbody></table></div>
@@ -2277,7 +2385,8 @@ function purChoice(mode){
 }
 function sendPurchase(lines,kind,note){
   withWindow(`سيُرسل طلب بـ ${lines.length} صنف إلى مدير المخزن للتصنيف والاعتماد.`,()=>{
-    const r=newReq('purchase',lines); r.kindHint=kind; r.note=note; r.status='classify'; draftClear('pur'); save();
+    const r=newReq('purchase',lines); r.kindHint=kind; r.note=note; r.status='classify'; draftClear('pur');
+    S.lastSent={by:ses.id,ts:nowISO(),nos:[r.no]}; save();
     toast('أُرسل طلب الشراء برقم '+r.no,'ok'); go('reqs');
   });
 }
@@ -2339,6 +2448,7 @@ function reqFiltered(){
 }
 function pgReqs(){
   const list=reqFiltered();
+  const ls=S.lastSent&&S.lastSent.by===ses.id&&(Date.now()-new Date(S.lastSent.ts).getTime()<36e5)?S.lastSent:null;
   const clubOpts=S.clubs.map(c=>`<option value="${c.id}" ${F.club===c.id?'selected':''}>${h(c.name)}</option>`).join('');
   const stOpts=Object.keys(ST).map(k=>`<option value="${k}" ${F.status===k?'selected':''}>${ST[k]}</option>`).join('');
   const bulk=can('manager','keeper');
@@ -2354,7 +2464,9 @@ function pgReqs(){
     <td class="mono">${r.lines.length}</td><td>${fmtD(r.dates.created)}</td><td>${pill(r.status)}</td>
     <td style="display:flex;gap:6px"><button class="btn ghost sm" onclick="openReq('${r.id}')">تفاصيل</button>${acts}</td></tr>`;
   }).join('');
-  return `<div class="toolbar">
+  return `${ls&&ls.nos.length?`<div class="note" style="margin-bottom:14px;background:#e2efe7;border-color:#b9ddc8;color:#286249">
+    <b>&#10003; أُرسلت طلباتك بنجاح.</b> أرقام الطلبات: <b>${ls.nos.map(h).join(' · ')}</b> — تابع حالتها في الجدول أدناه.</div>`:''}
+  <div class="toolbar">
     <input class="grow" type="text" placeholder="بحث برقم الطلب أو الصنف" value="${h(F.q)}" oninput="F.q=this.value;renderPage()">
     ${ses.role!=='club'?`<select onchange="setF('club',this.value)"><option value="">كل النوادي</option>${clubOpts}</select>`:''}
     <select onchange="setF('kind',this.value)"><option value="">كل الأنواع</option>
@@ -2422,19 +2534,24 @@ function reqActions(r){
   if(r.status==='rejected'||r.status==='closed')return a;
   /* التصنيف والاعتماد والشراء والتوريد: مدير المخزن أو أمين المخزن أو مشرف النوادي */
   if(can('manager','keeper')&&['review','classify','new'].includes(r.status)){
+    if(ses.role==='admin')a.push({t:'اعتماد وصرف مباشر',fn:`approveIssueNow('${r.id}')`,cls:'ok'});
     a.push({t:'اعتماد',fn:`approveReq('${r.id}')`,cls:'ok'});
     a.push({t:'رفض',fn:`rejectReq('${r.id}')`,cls:'dan'});
   }
+  if(ses.role==='admin'&&['keeper','approved','ready','received','to_keeper','issued_part','buying','bought','bought_part'].includes(r.status))
+    a.push({t:'صرف مباشر',fn:`approveIssueNow('${r.id}')`,cls:'ok'});
   if(r.kind==='purchase'){
     if(can('manager','supervisor')&&['keeper','buying'].includes(r.status))
-      a.push({t:'اعتماد وحفظ الشراء',fn:`buyModal('${r.id}')`,cls:'gold'});
+      a.push({t:'تسجيل الشراء',fn:`buyModal('${r.id}')`,cls:'gold'});
     if(can('manager','keeper')&&['bought','bought_part','to_keeper'].includes(r.status))
       a.push({t:'تسجيل التوريد',fn:`grnModal('${r.id}')`,cls:'gold'});
+    if(can('manager','supervisor')&&!r.purApproved&&['received','ready','to_keeper','bought','bought_part'].includes(r.status))
+      a.push({t:'اعتماد الشراء',fn:`approvePurchase('${r.id}')`,cls:'ok'});
   }
   /* الصرف: مدير المخزن فقط */
   const isSup=ses&&ses.role==='supervisor';
   if(can('manager','keeper')&&!isSup){
-    if(r.kind==='purchase'&&['received','ready','issued_part','to_keeper'].includes(r.status))
+    if(r.kind==='purchase'&&r.purApproved&&['received','ready','issued_part','to_keeper'].includes(r.status))
       a.push({t:'صرف للنادي',fn:`issueModal('${r.id}')`,cls:'gold'});
     if(r.kind!=='purchase'&&['keeper','approved','ready','issued_part','to_keeper'].includes(r.status))
       a.push({t:'صرف للنادي',fn:`issueModal('${r.id}')`,cls:'gold'});
@@ -2461,7 +2578,12 @@ function openReq(id){
         <option value="asset" ${l.cls==='asset'?'selected':''}>أصل ثابت</option></select>
         <select style="margin-top:5px" onchange="setCat('${r.id}','${l.id}',this.value)">
           <option value="">— التصنيف —</option>
-          ${clsCats().map(c=>`<option ${l.cat===c?'selected':''}>${h(c)}</option>`).join('')}</select>`
+          ${clsCats().map(c=>`<option ${l.cat===c?'selected':''}>${h(c)}</option>`).join('')}</select>
+        <input style="margin-top:5px" list="mrg_${l.id}" id="mi_${l.id}" placeholder="بحث ودمج مع صنف قائم"
+          value="${l.refId?h(((l.cls==='asset'?assetById(l.refId):itemById(l.refId))||{}).code||'')+' — '+h(((l.cls==='asset'?assetById(l.refId):itemById(l.refId))||{}).name||''):''}"
+          onchange="mergePick('${r.id}','${l.id}',this.value)">
+        <datalist id="mrg_${l.id}">${(l.cls==='asset'?S.assets:S.items).filter(x=>x.active!==false)
+          .map(x=>`<option value="${h(x.code)} — ${h(x.name)}">`).join('')}</datalist>`
       :l.cls?((l.cls==='asset'?'<span class="pill p-gold">أصل ثابت</span>':'<span class="pill p-info">مادة استهلاكية</span>')
         +(l.cat?`<div style="font-size:11.5px;color:var(--ink3)">${h(l.cat)}</div>`:''))
       :'<span class="pill p-warn">بانتظار التصنيف</span>'}</td>
@@ -2472,6 +2594,10 @@ function openReq(id){
   modal(`<div class="modal lg"><div class="mh"><h3>طلب ${h(r.no)} — ${h(kindName(r.kind))}</h3><button onclick="closeModal()">&times;</button></div>
   <div class="mb">
     ${railFor(r)}
+    ${r.kind==='purchase'&&!r.purApproved&&['received','ready','to_keeper','bought','bought_part'].includes(r.status)?
+      `<div class="note dan" style="margin:10px 0"><b>بانتظار اعتماد الشراء من مشرف النوادي</b> — لا يُصرف للنادي قبله.</div>`:''}
+    ${r.purApproved?`<div class="note info" style="margin:10px 0">اعتُمد الشراء بواسطة <b>${h(r.purApprovedBy||'')}</b>
+      ${r.purApprovedAt?'— '+fmtDT(r.purApprovedAt):''} — جاهز للصرف.</div>`:''}
     ${r.status==='to_keeper'?`<div class="note" style="margin:10px 0"><b>تم الإرسال للصرف.</b>
       الطلب لدى أمين المخزن لاستكمال التوريد إن لزم ثم الصرف للنادي.</div>`:''}
     ${['bought','bought_part'].includes(r.status)?`<div class="note dan" style="margin:10px 0">
@@ -2537,6 +2663,18 @@ function clsCats(){
   const base=['رياضية','ضيافة ورحلات','مواد استهلاكية'];
   return [...new Set([...base,...S.cats.c,...S.cats.a])];
 }
+function mergeLineWith(rid,lid,targetId){
+  const r=S.reqs.find(x=>x.id===rid),l=r.lines.find(x=>x.id===lid);
+  if(!targetId){l.refId=null;save();return}
+  const t=(l.cls==='asset')?assetById(targetId):itemById(targetId);
+  if(!t)return;
+  const old=l.name;
+  l.refId=t.id;l.name=t.name;l.unit=t.unit||l.unit;l.cat=t.cat||l.cat;
+  rememberCls(old,l.cls,l.cat);rememberCls(t.name,l.cls,t.cat);
+  hist(r,'دُمج الصنف «'+old+'» مع الصنف المعتمد «'+t.name+'» ('+t.code+')');
+  logIt('دمج صنف طلب','طلب',r.no,old,t.name+' ('+t.code+')');
+  save();renderPage();toast('دُمج مع '+t.name,'ok');
+}
 function setCat(rid,lid,v){
   const r=S.reqs.find(x=>x.id===rid),l=r.lines.find(x=>x.id===lid);
   l.cat=v;rememberCls(l.name,null,v);save();logIt('تصنيف صنف','طلب',r.no,'',l.name+' → '+v);
@@ -2565,11 +2703,80 @@ function autoClassify(r){
   if(n)hist(r,'صنّف النظام '+n+' صنفًا تلقائيًا حسب تصنيف سابق معتمد');
   return n;
 }
+function mergePick(rid,lid,val){
+  const r=S.reqs.find(x=>x.id===rid),l=r.lines.find(x=>x.id===lid);
+  const v=String(val||'').trim();
+  if(!v){l.refId=null;save();return toast('أُلغي الربط','ok')}
+  const code=v.split('—')[0].trim();
+  const pool=(l.cls==='asset'?S.assets:S.items);
+  const t=pool.find(x=>x.code===code)||pool.find(x=>normName(x.name)===normName(v))
+    ||pool.find(x=>v.indexOf(x.name)>-1);
+  if(!t)return toast('لم يُعثر على صنف مطابق — اختر من القائمة المنسدلة','dan');
+  mergeLineWith(rid,lid,t.id);
+}
 function setCls(rid,lid,v){
   const r=S.reqs.find(x=>x.id===rid),l=r.lines.find(x=>x.id===lid);
   l.cls=v;rememberCls(l.name,v,l.cat);save();logIt('تصنيف صنف','طلب',r.no,'',l.name+' → '+(v==='asset'?'أصل ثابت':'مادة استهلاكية'));
 }
 function hist(r,txt){r.hist.push({ts:nowISO(),by:ses.fullName,txt})}
+function approveIssueNow(id){
+  if(ses.role!=='admin')return toast('هذا الإجراء لمدير النظام','dan');
+  const r=S.reqs.find(x=>x.id===id);
+  confirmBox('اعتماد وصرف مباشر',
+    `سيُنفّذ على الطلب ${h(r.no)} دفعة واحدة: الاعتماد${r.kind==='purchase'?' واعتماد الشراء':''} ثم الصرف للنادي وتأكيده.`,()=>{
+    if(['review','classify','new'].includes(r.status)){
+      if(r.kind==='purchase')r.lines.forEach(l=>{if(!l.cls)l.cls=(knownCls(l.name)||{}).cls||'consumable'});
+      applyApprove(r);
+    }
+    if(r.kind==='purchase')  {r.purApproved=true;r.purApprovedBy=ses.fullName;r.purApprovedAt=nowISO()}
+    const res=autoIssue(r,'صرف مباشر بواسطة مدير النظام');
+    save();renderPage();
+    toast(res.n?('صُرف '+res.n+' صنفًا وصدر السند'):'لا توجد كميات قابلة للصرف حاليًا',res.n?'ok':'dan');
+  },'ok');
+}
+function autoIssue(r,note){
+  const dISO=nowISO(),cons=[],asst=[];
+  let n=0;
+  r.lines.forEach(l=>{
+    const cls=l.cls||(r.kind==='asset'?'asset':'consumable');
+    const rem=l.qty-(l.done||0); if(rem<=0)return;
+    if(r.kind==='purchase'&&!(l.grn>0)&&!l.fromStock)return;
+    const tgt=cls==='asset'?(assetById(l.refId)||S.assets.find(a=>normName(a.name)===normName(l.name)))
+      :(itemById(l.refId)||S.items.find(i=>normName(i.name)===normName(l.name)));
+    if(!tgt)return;
+    const q=Math.min(rem,tgt.qty); if(q<=0)return;
+    const before=tgt.qty;tgt.qty-=q;l.done=(l.done||0)+q;l.refId=tgt.id;
+    l.status=l.done>=l.qty?'issued':'issued_part';
+    addMove('صرف',cls==='asset'?'أصل ثابت':'مادة استهلاكية',tgt.name,-q,before,tgt.qty,note,r.no,r.clubId);
+    (cls==='asset'?asst:cons).push({name:l.name,code:tgt.code,unit:l.unit,qty:q,notes:note,cond:tgt.cond||''});
+    n+=q;
+  });
+  const by=keeperName(),to=clubOfficer(r.clubId),due=addDays(S.settings.dueDays);
+  if(cons.length)mkVoucher('CO',r,cons,{deliverer:by,receiver:to,date:dISO,notes:note});
+  if(asst.length){
+    const v=mkVoucher('AO',r,asst,{deliverer:by,receiver:to,date:dISO,dueAt:due,notes:note});
+    asst.forEach(row=>{
+      const a=S.assets.find(x=>x.code===row.code);
+      if(!a)return;
+      S.custody.push({id:uid(),no:v.no,voucherId:v.id,reqId:r.id,assetId:a.id,assetCode:a.code,assetName:a.name,
+        clubId:r.clubId,qty:row.qty,retQty:0,dmgPending:0,dmgDone:0,issuedAt:dISO,dueAt:due,status:'open',
+        returnReq:false,cond:a.cond,notes:note,retDate:null,retVoucher:null,dmgVoucher:null,
+        kit:!!r.kit,kitName:r.kit?(r.kitName||kitDef().name):''});
+    });
+  }
+  if(n){
+    r.dates.out=dISO;
+    const allDone=r.lines.every(l=>(l.done||0)>=l.qty||['not_bought','unavailable','cancelled'].includes(l.status));
+    const openC=S.custody.some(x=>x.reqId===r.id&&x.status==='open');
+    r.status=!allDone?'issued_part':(openC?'await_return':'closed');
+    if(r.status==='closed')r.dates.closed=nowISO();
+    hist(r,note);
+    logIt('صرف مباشر','طلب',r.no,'',ST[r.status]);
+    notify('صُرفت مواد الطلب '+r.no,'club',r.clubId);
+    runAlerts();
+  }
+  return {n};
+}
 function approveReq(id){
   if(!can('manager','keeper'))return toast('هذا الإجراء من صلاحية مدير المخزن أو أمين المخزن أو مشرف النوادي','dan');
   const r=S.reqs.find(x=>x.id===id);
@@ -2667,6 +2874,18 @@ function bulkClose(){
       logIt('إغلاق طلب','طلب',r.no,'','مغلق')});
     save();renderPage();toast('أُغلق '+sel.length+' طلب','ok');
   });
+}
+function approvePurchase(id){
+  if(!can('manager','supervisor'))return toast('اعتماد الشراء من صلاحية مشرف النوادي أو مدير المخزن','dan');
+  const r=S.reqs.find(x=>x.id===id);
+  confirmBox('اعتماد الشراء','باعتماد الشراء يصبح الطلب '+r.no+' جاهزًا للصرف للنادي.',()=>{
+    r.purApproved=true;r.purApprovedBy=ses.fullName;r.purApprovedAt=nowISO();
+    hist(r,'اعتمد الشراء: '+ses.fullName);
+    logIt('اعتماد الشراء','طلب',r.no,'','معتمد للصرف');
+    notify('اعتُمد شراء الطلب '+r.no+' — جاهز للصرف','keeper');
+    notify('اعتُمد شراء الطلب '+r.no,'manager');
+    save();renderPage();toast('اعتُمد الشراء، أصبح الطلب جاهزًا للصرف','ok');
+  },'ok');
 }
 function sendToKeeper(id){
   const r=S.reqs.find(x=>x.id===id);
@@ -2877,6 +3096,8 @@ function issueModal(id){
   if(ses&&ses.role==='supervisor')return toast('مشرف النوادي لا يصرف — أرسل الطلب للمخزن للصرف','dan');
   if(!can('manager','keeper'))return toast('الصرف من صلاحية أمين المخزن أو مدير المخزن','dan');
   const r=S.reqs.find(x=>x.id===id);
+  if(r.kind==='purchase'&&!r.purApproved)
+    return toast('بانتظار «اعتماد الشراء» من مشرف النوادي قبل الصرف للنادي','dan');
   const ls=issueLines(r);
   if(!ls.length){toast('لا توجد أصناف جاهزة للصرف في هذا الطلب','dan');return}
   const rows=ls.map(l=>{
@@ -2896,7 +3117,7 @@ function issueModal(id){
   modal(`<div class="modal lg"><div class="mh"><h3>صرف مواد الطلب ${h(r.no)} — ${h(clubName(r.clubId))}</h3><button onclick="closeModal()">&times;</button></div>
   <div class="mb"><div class="row">
     <div class="field"><label>تاريخ الخروج</label><input id="s_date" type="date" value="${today()}"></div>
-    <div class="field"><label>اسم مسلّم المواد (أمين المخزن)</label><input id="s_by" value="${h(keeperName())}"></div>
+    <div class="field"><label>اسم مسلّم المواد (أمين مخزن العهد)</label><input id="s_by" value="${h(keeperName())}"></div>
     <div class="field"><label>اسم مستلم المواد (مسؤول النادي)</label><input id="s_to" value="${h(clubOfficer(r.clubId))}"></div>
     <div class="field"><label>الموعد المتوقع لإرجاع العهدة</label><input id="s_due" type="date" value="${addDays(S.settings.dueDays)}"></div>
   </div>
@@ -3144,7 +3365,8 @@ function voucherDoc(v){
   }
   const s1=v.type==='GRN'?['مستلم المواد',v.deliverer]
     :v.type==='AR'?['مستلم العهدة',v.receiver]
-    :v.type==='DM'?['معتمد القرار',v.receiver||v.by]:['مسلّم المواد',v.deliverer];
+    :v.type==='DM'?['معتمد القرار',v.receiver||v.by]
+    :v.type==='AO'?['مسلّم المواد (أمين مخزن العهد)',v.deliverer]:['مسلّم المواد',v.deliverer];
   const s2=v.type==='GRN'?['مدخل البيانات',v.by]
     :v.type==='AR'?['أمين المخزن',v.keeper||v.by]
     :v.type==='DM'?['أمين المخزن',v.keeper||v.by]:['مستلم المواد',v.receiver||v.by];
@@ -3287,6 +3509,16 @@ function pgCustody(){
     <div class="card-b" style="padding-top:10px;display:flex;gap:8px;flex-wrap:wrap">
       ${pend.map(id=>`<button class="btn dan sm" onclick="kitReceiveModal('${id}')">استلام حقيبة ${h(clubName(id))} كاملة</button>`).join('')}
     </div></div>`:'';
+  const consRows=(function(){
+    const out=[];let n=0;
+    scopedVou().filter(v=>v.type==='CO'&&!v.cancelled).forEach(v=>v.lines.forEach(l=>{
+      n++;out.push(`<tr><td class="mono">${n}</td><td class="mono">${h(v.no)}</td><td class="mono">${h(v.reqNo||'')}</td>
+        ${ses.role!=='club'?`<td>${h(clubName(v.clubId))}</td>`:''}
+        <td>${h(l.name)}</td><td class="mono">${l.qty}</td><td>${h(l.unit||'')}</td>
+        <td>${fmtD(v.date)}</td><td>${h(v.receiver||'')}</td></tr>`);
+    }));
+    return out;
+  })();
   const kitBox=(ses.role==='club'&&kitOut(ses.clubId).length)?`
     <div class="card" style="margin-bottom:14px;border-color:#F0C9C5"><div class="card-h" style="background:#FDF2F1">
       <h3>${h(kitDef().name)}</h3><span class="pill p-dan">في عهدة ناديكم</span>
@@ -3294,7 +3526,13 @@ function pgCustody(){
     <div class="card-b" style="padding-top:10px"><div style="display:flex;gap:8px;flex-wrap:wrap">
       ${kitOut(ses.clubId).map(c=>`<span class="pill p-gray">${h(c.assetName)} — المتبقي ${custRemain(c)}</span>`).join('')}
     </div></div></div>`:'';
-  const body=tab==='club'?clubGroups(all):custTable(list);
+  const body=tab==='club'?clubGroups(all)
+    :tab==='cons'?`<table id="tblCu"><thead><tr><th>م</th><th>سند الخروج</th><th>رقم الطلب</th>
+      ${ses.role!=='club'?'<th>النادي</th>':''}<th>المادة</th><th>الكمية</th><th>الوحدة</th><th>تاريخ الصرف</th>
+      <th>المستلم</th></tr></thead><tbody>${consRows.join('')||
+      `<tr><td colspan="9"><div class="empty"><b>لا توجد مواد استهلاكية مصروفة</b>
+        المواد الاستهلاكية تُصرف ولا تُرجَع، وتظهر هنا للعلم فقط.</div></td></tr>`}</tbody></table>`
+    :custTable(list);
   return `${kitRecv}${kitBox}<div class="toolbar">
     <input class="grow" type="text" placeholder="بحث برقم السند أو الأصل" value="${h(F.q)}" oninput="F.q=this.value;renderPage()">
     ${ses.role!=='club'?`<select onchange="setF('club',this.value)"><option value="">كل النوادي</option>
@@ -3308,7 +3546,8 @@ function pgCustody(){
     ${tabBtn('open','العهد القائمة',open.length,'p-warn')}
     ${tabBtn('back','المسترجعة والمغلقة',back.length,'p-ok')}
     ${tabBtn('stuck','العالقة',stuck.length,'p-dan')}
-    ${tabBtn('club','حسب النادي',S.clubs.filter(c=>all.some(x=>x.clubId===c.id)).length,'p-info')}</div>
+    ${tabBtn('club','حسب النادي',S.clubs.filter(c=>all.some(x=>x.clubId===c.id)).length,'p-info')}
+    ${tabBtn('cons','عهد استهلاكية',consRows.length,'p-gold')}</div>
   <div class="card"><div class="tw" style="max-height:62vh">${body}</div></div>`;
 }
 function bulkOk(c){return c.returnReq&&!c.kit&&!num(c.reqDmg)&&!num(c.dmgPending)}
@@ -4024,7 +4263,7 @@ function bulkDelUsers(){
     ids.forEach(id=>{
       const u=S.users.find(x=>x.id===id); if(!u)return;
       logIt('حذف مستخدم','مستخدم',u.username,u.fullName,'محذوف','حذف بواسطة '+ses.fullName);
-      S.users=S.users.filter(x=>x.id!==id);
+      tomb('users',id);S.users=S.users.filter(x=>x.id!==id);
       S.resets=(S.resets||[]).filter(r=>r.userId!==id);
     });
     save();renderPage();toast('حُذف '+ids.length+' مستخدم','ok');
@@ -4043,7 +4282,7 @@ function bulkDelClubs(){
     ok.forEach(id=>{
       const c=S.clubs.find(x=>x.id===id); if(!c)return;
       logIt('حذف نادٍ','نادٍ',c.name,'','محذوف','حذف بواسطة '+ses.fullName);
-      S.clubs=S.clubs.filter(x=>x.id!==id);
+      tomb('clubs',id);S.clubs=S.clubs.filter(x=>x.id!==id);
     });
     save();renderPage();toast('حُذف '+ok.length+' نادٍ','ok');
   },'dan');
@@ -4073,7 +4312,7 @@ function doDelUser(id){
   const rs='حذف بواسطة '+ses.fullName;
   const u=S.users.find(x=>x.id===id); if(!u)return;
   logIt('حذف مستخدم','مستخدم',u.username,u.fullName+' — '+ROLES[u.role],'محذوف',rs);
-  S.users=S.users.filter(x=>x.id!==id);
+  tomb('users',id);S.users=S.users.filter(x=>x.id!==id);
   S.resets=(S.resets||[]).filter(r=>r.userId!==id);
   save();closeModal();renderPage();toast('حُذف المستخدم','ok');
 }
@@ -4100,7 +4339,7 @@ function doDelClub(id){
   const rs='حذف بواسطة '+ses.fullName;
   const c=S.clubs.find(x=>x.id===id); if(!c)return;
   logIt('حذف نادٍ','نادٍ',c.name,'','محذوف',rs);
-  S.clubs=S.clubs.filter(x=>x.id!==id);
+  tomb('clubs',id);S.clubs=S.clubs.filter(x=>x.id!==id);
   save();closeModal();renderPage();toast('حُذف النادي','ok');
 }
 function approveUser(id){
@@ -4296,7 +4535,17 @@ function pgSettings(){
         <br>يجب أن تسمح قواعد Firestore بالقراءة والكتابة لهذا المستند، وإلا ظهر الخطأ 403.</div>
     </div></div>
 
-  ${can('manager')?`<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>اعتماد الجرد كمخزون رسمي</h3></div>
+  ${can('admin')?`<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>التنقل بين المستخدمين</h3></div>
+    <div class="card-b"><div class="note info" style="margin:0 0 10px">ادخل بعين أي مستخدم لمعاينة ما يراه أو لإتمام إجراء نيابة عنه،
+      وبياناته لا تتغير، وكل إجراء يُسجَّل باسمه.</div>
+    <button class="btn gold" onclick="switchRoleModal()">&#8646; فتح قائمة المستخدمين</button></div></div>`:''}
+
+  ${can('manager')?`<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>تصفير الطلبات والعهد</h3></div>
+    <div class="card-b"><div class="note dan" style="margin:0 0 10px">يحذف كل الطلبات والعهد والسندات والتوالف
+      ويعيد الترقيم من البداية، مع بقاء الأصناف والمستخدمين والنوادي والإعدادات كما هي.</div>
+    <button class="btn dan" onclick="resetOpsModal()">&#128465; تصفير الطلبات والعهد والسندات</button></div></div>
+
+  <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>اعتماد الجرد كمخزون رسمي</h3></div>
     <div class="card-b"><div class="note dan" style="margin:0 0 10px">يحذف المخزون الحالي ويعتمد أرقام الجرد وباركوداته كأصل،
       مع ربط العهد والطلبات بالأصناف الجديدة.</div>
     <button class="btn dan" onclick="invResetModal()">استبدال المخزون بأرقام الجرد المعتمد</button></div></div>`:''}
@@ -4709,6 +4958,33 @@ function custodyRep(mode,out){
 }
 /* ================= سجل التدقيق الشامل ================= */
 function pgTrail(){
+  if(F.ttab==='logins'){
+    const lg=S.logins.filter(l=>{
+      if(F.q&&!(l.username+' '+(l.why||'')).toLowerCase().includes(F.q.toLowerCase()))return false;
+      if(F.from&&l.ts.slice(0,10)<F.from)return false;
+      if(F.to&&l.ts.slice(0,10)>F.to)return false;
+      return true;
+    });
+    const nameOf=u=>{const x=S.users.find(y=>y.username===u);return x?x.fullName:'—'};
+    const rows=lg.slice(0,600).map((l,i)=>`<tr class="${l.ok?'':'red'}"><td class="mono">${i+1}</td>
+      <td>${fmtD(l.ts)}</td><td>${fmtDT(l.ts).split(' ')[1]}</td><td class="mono">${h(l.username)}</td>
+      <td>${h(nameOf(l.username))}</td>
+      <td>${l.ok?'<span class="pill p-ok">دخول ناجح</span>':'<span class="pill p-dan">محاولة فاشلة</span>'}</td>
+      <td>${h(l.why||'—')}</td></tr>`).join('');
+    return `<div class="toolbar">
+      <button class="btn ghost sm" onclick="F.ttab='';renderPage()">سجل العمليات</button>
+      <button class="btn gold sm" onclick="F.ttab='logins';renderPage()">أوقات دخول المستخدمين</button>
+      <input class="grow" type="text" placeholder="بحث باسم المستخدم" value="${h(F.q||'')}" oninput="F.q=this.value;renderPage()">
+      <input type="date" value="${F.from||''}" onchange="setF('from',this.value)">
+      <input type="date" value="${F.to||''}" onchange="setF('to',this.value)">
+      <button class="btn ghost" onclick="printTable('tblLg','أوقات دخول المستخدمين')">&#128424; طباعة</button>
+      <button class="btn ghost" onclick="exportTable('tblLg','أوقات_الدخول')">&#128202; Excel</button></div>
+    <div class="note info" style="margin-bottom:14px">سجل بكل محاولات الدخول: التاريخ والوقت واسم المستخدم والنتيجة.
+      إجمالي السجلات: ${S.logins.length}</div>
+    <div class="card"><div class="tw" style="max-height:64vh"><table id="tblLg"><thead><tr><th>م</th><th>التاريخ</th>
+      <th>الوقت</th><th>اسم المستخدم</th><th>الاسم</th><th>النتيجة</th><th>الملاحظة</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="7"><div class="empty"><b>لا توجد محاولات دخول</b></div></td></tr>`}</tbody></table></div></div>`;
+  }
   const list=S.log.filter(l=>{
     if(F.q){const t=(l.user+' '+l.action+' '+l.type+' '+l.ref+' '+l.before+' '+l.after+' '+l.reason).toLowerCase();
       if(!t.includes(F.q.toLowerCase()))return false}
@@ -4725,6 +5001,8 @@ function pgTrail(){
     <td class="mono">${h(l.ref)}</td><td>${h(String(l.before).slice(0,50))}</td>
     <td>${h(String(l.after).slice(0,50))}</td><td>${h(l.reason||'')}</td></tr>`).join('');
   return `<div class="toolbar">
+    <button class="btn gold sm" onclick="F.ttab='';renderPage()">سجل العمليات</button>
+    <button class="btn ghost sm" onclick="F.ttab='logins';renderPage()">أوقات دخول المستخدمين</button>
     <input class="grow" type="text" placeholder="بحث في سجل التدقيق" value="${h(F.q||'')}" oninput="F.q=this.value;renderPage()">
     <select onchange="F.tact=this.value;renderPage()"><option value="">كل العمليات</option>
       ${acts.map(a=>`<option ${F.tact===a?'selected':''}>${h(a)}</option>`).join('')}</select>
@@ -4820,6 +5098,28 @@ const INV_ASSETS=[
  ['FA-0047','شبّاحة بنفسجي كبير','أدوات رياضية',3,'جيدة','629783810482'],
  ['FA-0048','شبّاحة بنفسجي وردي XL عائلي','أدوات رياضية',4,'جيدة','629160311260']
 ];
+function resetOpsModal(){
+  if(!can('manager'))return toast('التصفير من صلاحية مدير المخزن ومدير النظام','dan');
+  modal(`<div class="modal sm"><div class="mh"><h3>تصفير الطلبات والعهد</h3><button onclick="closeModal()">&times;</button></div>
+  <div class="mb"><div class="note dan"><b>سيتم حذف:</b><br>
+    الطلبات: ${S.reqs.length} · العهد: ${S.custody.length} · السندات: ${S.vouchers.length} ·
+    التوالف: ${(S.damages||[]).length} · محاضر الجرد: ${(S.audits||[]).length}<br>
+    وتعود أرقام السندات والطلبات إلى البداية. الأصناف والمستخدمون والنوادي والرسائل لا تُمسّ.</div></div>
+  <div class="mf"><button class="btn dan" onclick="doResetOps()">تأكيد التصفير</button>
+  <button class="btn ghost" onclick="closeModal()">إلغاء</button></div></div>`);
+}
+function doResetOps(){
+  if(!can('manager'))return toast('صلاحية غير كافية','dan');
+  const n={r:S.reqs.length,c:S.custody.length,v:S.vouchers.length,d:(S.damages||[]).length,a:(S.audits||[]).length};
+  S.reqs=[];S.custody=[];S.vouchers=[];S.damages=[];S.audits=[];S.seq={};
+  S.assets.forEach(a=>{delete a.__out});
+  logIt('تصفير الطلبات والعهد','نظام','',
+    n.r+' طلب و'+n.c+' عهدة و'+n.v+' سند','صفر — بواسطة '+ses.fullName);
+  addMove('تصفير الطلبات والعهد','نظام','—',0,0,0,'تصفير كامل للحركات التشغيلية');
+  notify('صُفّرت الطلبات والعهد والسندات','keeper');
+  notify('صُفّرت الطلبات والعهد والسندات','manager');
+  save();closeModal();render();toast('صُفّرت الطلبات والعهد والسندات','ok');
+}
 function invResetModal(){
   if(!can('manager'))return toast('استبدال المخزون من صلاحية مدير المخزن ومدير النظام','dan');
   const openC=S.custody.filter(c=>c.status==='open'&&custRemain(c)>0).length;
@@ -5681,6 +5981,10 @@ function packState(){
 }
 const SYNC_COLS=['users','clubs','items','assets','reqs','vouchers','custody','damages','msgs',
   'audits','moves','log','notes','logins','resets','locations','kits'];
+function tomb(kind,id){
+  S.tomb=S.tomb||{};S.tomb[kind]=S.tomb[kind]||{};
+  S.tomb[kind][id]=nowISO();
+}
 function mergeArr(a,b,preferB){
   const map=new Map();
   (a||[]).forEach(x=>{if(x&&x.id)map.set(x.id,x)});
@@ -5701,7 +6005,15 @@ function sortState(o){
 /* دمج نسختين بدل استبدال إحداهما، حتى لا تضيع تسجيلات أو طلبات جهاز آخر */
 function mergeStates(local,remote,preferRemote){
   const base=preferRemote?Object.assign({},local,remote):Object.assign({},remote,local);
-  SYNC_COLS.forEach(k=>{base[k]=mergeArr(local[k],remote[k],preferRemote)});
+  const TOMBC={users:'users',clubs:'clubs',items:'items',assets:'assets'};
+  base.tomb=Object.assign({},remote.tomb||{});
+  Object.keys(local.tomb||{}).forEach(k=>{base.tomb[k]=Object.assign({},(remote.tomb||{})[k]||{},local.tomb[k])});
+  SYNC_COLS.forEach(k=>{
+    let arr=mergeArr(local[k],remote[k],preferRemote);
+    const tk=TOMBC[k];
+    if(tk&&base.tomb[tk])arr=arr.filter(x=>!base.tomb[tk][x.id]);
+    base[k]=arr;
+  });
   base.seq={};
   [local.seq||{},remote.seq||{}].forEach(sq=>Object.keys(sq).forEach(pfx=>{
     base.seq[pfx]=base.seq[pfx]||{};
@@ -5717,7 +6029,11 @@ function applyRemote(obj){
   const keepSes=ses?ses.id:null;
   S=obj;
   if(typeof S.rev!=='number')S.rev=0;
-  if(keepSes){const u=S.users.find(x=>x.id===keepSes);if(u)ses=Object.assign(u,{origRole:ses.origRole,origClub:ses.origClub});}
+  if(keepSes){
+    const u=S.users.find(x=>x.id===keepSes);
+    if(u)ses=isActing()?Object.assign({},u,{__imp:true}):u;
+    if(REALME){const r=S.users.find(x=>x.id===REALME.id);if(r)REALME=r;}
+  }
   try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
 }
 async function cloudPull(silent){
@@ -5818,6 +6134,37 @@ if(!S.msgs)S.msgs=[];
 if(!S.clsMap)S.clsMap={};
 if(!S.quota)S.quota={};
 if(!S.noMerge)S.noMerge={};
+if(!S.tomb)S.tomb={};
+(function purgeTombed(){
+  let n=0;
+  const cols={users:'users',clubs:'clubs',items:'items',assets:'assets'};
+  Object.keys(cols).forEach(k=>{
+    const t=S.tomb[k]; if(!t)return;
+    const before=S[k].length;
+    S[k]=S[k].filter(x=>!t[x.id]);
+    n+=before-S[k].length;
+  });
+  if(n){logIt('تنظيف المحذوفات','نظام','',n+' سجل','مُنع رجوعها بعد الحذف');save()}
+})();
+/* إصلاح حسابات تغيّر دورها بسبب «التنقل بين الأدوار» في نسخة سابقة */
+(function fixRoles(){
+  let fixed=0;
+  S.users.forEach(u=>{
+    if(u.origRole){
+      u.role=u.origRole;u.clubId=u.origClub||null;
+      delete u.origRole;delete u.origClub;delete u.__act;delete u.__imp;fixed++;
+    }
+    if(u.role!=='club'&&u.clubId){u.clubId=null;fixed++}
+  });
+  if(!S.users.some(u=>u.role==='admin')){
+    const a=S.users.find(u=>u.username==='admin')||S.users.find(u=>/مقطري/.test(u.fullName||''))||S.users[0];
+    if(a){a.role='admin';a.clubId=null;a.status='approved';fixed++}
+  }
+  if(fixed){
+    logIt('إصلاح أدوار المستخدمين','نظام','',fixed+' حساب','أُعيد الدور الأصلي تلقائيًا');
+    save();
+  }
+})();
 (function dedupeSameCode(){
   let removed=0;
   const fix=(arr,kind)=>{
@@ -5841,6 +6188,25 @@ if(!S.noMerge)S.noMerge={};
     }
   };
   fix(S.assets,'asset');fix(S.items,'item');
+  /* المواد الاستهلاكية: اسم واحد لكل مادة — تُجمع الكميات تلقائيًا */
+  (function(){
+    const byName={};
+    for(let i=S.items.length-1;i>=0;i--){
+      const o=S.items[i],k=normName(o.name);
+      if(!k)continue;
+      if(byName[k]){
+        const keep=byName[k];
+        if(String(o.code||'')<String(keep.code||'')){
+          keep.qty=num(keep.qty)+num(o.qty);
+          keep.code=o.code;
+        }else keep.qty=num(keep.qty)+num(o.qty);
+        S.reqs.forEach(r=>r.lines.forEach(l=>{if(l.refId===o.id)l.refId=keep.id}));
+        (S.audits||[]).forEach(a=>a.lines.forEach(l=>{if(l.refId===o.id)l.refId=keep.id}));
+        if(S.quota&&S.quota[o.id])delete S.quota[o.id];
+        S.items.splice(i,1);removed++;
+      }else byName[k]=o;
+    }
+  })();
   if(removed){
     logIt('حذف سجلات مكررة','مخزون','',removed+' سجل مكرر بنفس الرقم والاسم','حُذفت تلقائيًا');
     save();
