@@ -731,7 +731,7 @@ function confirmBox(title,msg,onOk,kind){
 function pill(st){return `<span class="pill ${STCLR[st]||'p-gray'}">${h(ST[st]||st)}</span>`}
 function clubFrozen(id){const c=S.clubs.find(x=>x.id===id);return c&&c.frozen?c:null}
 function clubCanOrder(){
-  const c=clubFrozen(ses.clubId);
+  const c=clubFrozen(orderClub());
   if(!c)return true;
   toast('نادي «'+c.name+'» مجمّد عن الطلبات'+(c.freezeReason?': '+c.freezeReason:'')+' — راجع الإدارة','dan');
   return false;
@@ -1017,9 +1017,10 @@ const NAV=[
     {k:'moves',t:'الحركات',full:'حركة المخزون',roles:['keeper','manager','admin']}
   ]},
   {key:'orders',g:'الطلبات',icon:'&#128722;',items:[
-    {k:'purchase',t:'طلب شراء',full:'طلب شراء موحّد',roles:['club','admin']},
-    {k:'newasset',t:'طلب مواد ثابتة',full:'طلب أصول ثابتة (عهدة)',roles:['club','admin']},
-    {k:'newcons',t:'طلب مواد استهلاكية',full:'طلب مواد استهلاكية',roles:['club','admin']},
+    {k:'purchase',t:'طلب شراء',full:'طلب شراء موحّد',roles:['club','manager','admin']},
+    {k:'newasset',t:'طلب مواد ثابتة',full:'طلب أصول ثابتة (عهدة)',roles:['club','manager','admin']},
+    {k:'newcons',t:'طلب مواد استهلاكية',full:'طلب مواد استهلاكية',roles:['club','manager','admin']},
+    {k:'top',t:'الأكثر طلبًا',full:'الأصناف الأكثر طلبًا',roles:['club','keeper','supervisor','manager','admin']},
     {k:'reqs',t:'متابعة الطلبات',full:'متابعة الطلبات',roles:['club','keeper','manager','admin'],count:'reqs'},
     {k:'custody',t:'عهد ناديكم',full:'العهد',roles:['club']},
     {k:'vouchers',t:'سندات ناديكم',full:'السندات',roles:['club']}
@@ -1305,7 +1306,7 @@ function renderPage(){
   const map={dash:pgDash,notes:pgNotes,cons:pgCons,assets:pgAssets,purchase:pgPurchase,reqs:pgReqs,
     custody:pgCustody,vouchers:pgVouchers,moves:pgMoves,regout:pgRegOut,damages:pgDamages,audit:pgAudit,
     reports:pgReports,quota:pgQuota,trail:pgTrail,newcons:pgNewCons,newasset:pgNewAsset,guide:pgGuide,
-    clubmsgs:pgClubMsgs,
+    clubmsgs:pgClubMsgs,top:pgTop,
     msgs:pgMsgs,users:pgUsers,settings:pgSettings};
   p.innerHTML=(map[route]||pgDash)();
   p.classList.remove('fade-up');void p.offsetWidth;p.classList.add('fade-up');
@@ -1326,7 +1327,8 @@ function pgDash(){
   const pend=S.users.filter(u=>u.status==='pending').length;
   const openC=Cu.filter(c=>c.status==='open').length;
   let out='';
-  if(ses.role==='club'){out+=frozenBanner();out+=draftBar();out+=pendingNote(ses.clubId,false);out+=windowBanner();}
+  if(ses.role==='club'){out+=frozenBanner();out+=custodyNote();out+=draftBar();
+    out+=pendingNote(ses.clubId,false);out+=windowBanner();}
   if(can('manager')&&pend) out+=`<div class="note" style="margin-bottom:14px">لديك ${pend} طلب تسجيل بانتظار الاعتماد. <a onclick="go('users')" style="cursor:pointer;font-weight:700">مراجعة الطلبات</a></div>`;
   if(can('keeper','manager','admin')&&low) out+=`<div class="note dan" style="margin-bottom:14px">${low} مادة وصلت الحد الأدنى أو أقل. <a onclick="go('cons')" style="cursor:pointer;font-weight:700">عرض المواد</a></div>`;
   out+=`<div class="sec-title">المخزون</div><div class="stats">
@@ -1461,17 +1463,42 @@ function readAllNotes(){
 
 /* ================= المواد الاستهلاكية ================= */
 /* ================= مسودات الطلبات غير المرسلة ================= */
-let DRAFT={cons:{},asset:{},pur:[]};
+let DRAFT={cons:{},asset:{},pur:[],next:{cons:false,asset:false,pur:false},held:null};
 function draftKey(){return 'wh_draft_'+(ses?ses.id:'x')}
 function draftLoad(){
   try{const d=JSON.parse(localStorage.getItem(draftKey())||'null');
     DRAFT=d&&d.cons?d:{cons:{},asset:{},pur:[]}}catch(e){DRAFT={cons:{},asset:{},pur:[]}}
+  DRAFT.next=DRAFT.next||{cons:false,asset:false,pur:false};
+  DRAFT.held=DRAFT.held||null;
 }
 function draftSave(){try{localStorage.setItem(draftKey(),JSON.stringify(DRAFT))}catch(e){}}
 function draftClear(kind){
-  if(kind==='cons')DRAFT.cons={};else if(kind==='asset')DRAFT.asset={};else if(kind==='pur')DRAFT.pur=[];
-  else DRAFT={cons:{},asset:{},pur:[]};
+  DRAFT.next=DRAFT.next||{cons:false,asset:false,pur:false};
+  if(kind==='cons'){DRAFT.cons={};DRAFT.next.cons=false}
+  else if(kind==='asset'){DRAFT.asset={};DRAFT.next.asset=false}
+  else if(kind==='pur'){DRAFT.pur=[];DRAFT.next.pur=false}
+  else DRAFT={cons:{},asset:{},pur:[],next:{cons:false,asset:false,pur:false},held:null};
   draftSave();
+}
+function holdDrafts(){
+  const c=draftCounts();
+  if(!(c.cons+c.asset+c.pur))return toast('لا توجد طلبات مُعدّة للاحتفاظ بها','dan');
+  DRAFT.held=nowISO();draftSave();renderPage();
+  toast('حُفظت طلباتك ولن تُرسل حتى تضغط «إرسال جميع طلباتك» — تبقى محفوظة حتى بعد إغلاق النظام','ok');
+}
+function toggleNextWeek(kind){
+  DRAFT.next=DRAFT.next||{cons:false,asset:false,pur:false};
+  DRAFT.next[kind]=!DRAFT.next[kind];
+  draftSave();renderPage();
+  toast(DRAFT.next[kind]?'أُجِّل هذا الطلب إلى الأسبوع القادم ولن يُرسل الآن':'أُلغي التأجيل','ok');
+}
+function nextWindowText(){
+  const d=new Date(),day=d.getDay(),hr=d.getHours();
+  let add=(5-day+7)%7;                 /* الجمعة القادمة */
+  if(day===5&&hr<16)add=0;
+  else if(add===0)add=7;
+  const nx=new Date(d);nx.setDate(d.getDate()+add);
+  return fmtD(nx)+' الساعة 4:00 عصرًا';
 }
 function dSet(kind,id){
   const ck=document.getElementById('ck_'+id),q=document.getElementById('q_'+id),n=document.getElementById('n_'+id);
@@ -1496,25 +1523,72 @@ function draftCounts(){
     pur:(DRAFT.pur||[]).length};
 }
 function draftBtns(){
-  if(!ses||ses.role!=='club')return '';
+  if(!ses||(ses.role!=='club'&&!can('manager')))return '';
   const c=draftCounts(),tot=c.cons+c.asset+c.pur;
   if(!tot)return '';
   return `<button class="btn gold sm" onclick="sendAllDrafts()">&#128228; إرسال جميع طلباتك (${tot})</button>
+    <button class="btn ghost sm" onclick="holdDrafts()">&#128190; الاحتفاظ وإرساله لاحقًا</button>
     <button class="btn ghost sm" onclick="clearAllDrafts()">مسح المُعد</button>`;
 }
 function draftBar(){
-  if(!ses||ses.role!=='club')return '<span id="draftBar"></span>';
+  if(!ses||(ses.role!=='club'&&!can('manager')))return '<span id="draftBar"></span>';
   const c=draftCounts(),tot=c.cons+c.asset+c.pur;
   if(!tot)return '<span id="draftBar"></span>';
-  const parts=[];
-  if(c.cons)parts.push('مواد استهلاكية: '+c.cons+' صنف');
-  if(c.asset)parts.push('أصول ثابتة: '+c.asset+' صنف');
-  if(c.pur)parts.push('طلب شراء: '+c.pur+' صنف');
-  return `<div id="draftBar" class="note dan" style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <div style="flex:1"><b>&#9888; لا تنسَ الطلبات المُعدّة ولم تُرسل بعد:</b> ${parts.map(h).join(' · ')}
-      — تبقى محفوظة عند تنقلك بين الصفحات حتى ترسلها.</div>
-    <button class="btn gold sm" onclick="sendAllDrafts()">&#128228; إرسال جميع طلباتك</button>
-    <button class="btn ghost sm" onclick="clearAllDrafts()">مسح المُعد</button></div>`;
+  const nx=DRAFT.next||{};
+  const chip=(k,t,n)=>n?`<span class="pill ${nx[k]?'p-info':'p-gold'}" style="cursor:pointer"
+    onclick="toggleNextWeek('${k}')" title="اضغط للتأجيل إلى الأسبوع القادم أو لإلغائه">
+    ${t}: ${n}${nx[k]?' — للأسبوع القادم':''}</span>`:'';
+  const ready=(c.cons&&!nx.cons)||(c.asset&&!nx.asset)||(c.pur&&!nx.pur);
+  return `<div id="draftBar" class="note ${orderOpen()?'':'dan'}" style="margin-bottom:14px">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <b>&#128230; سلة طلباتك المحفوظة:</b>
+      ${chip('cons','مواد استهلاكية',c.cons)}${chip('asset','أصول ثابتة',c.asset)}${chip('pur','طلب شراء',c.pur)}
+      ${DRAFT.held?`<span class="pill p-gray">محفوظة منذ ${fmtDT(DRAFT.held)}</span>`:''}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn ghost sm" onclick="holdDrafts()">&#128190; الاحتفاظ بالطلب وإرساله لاحقًا</button>
+      <button class="btn gold sm" onclick="sendAllDrafts()" ${ready?'':'disabled'}>&#128228; إرسال جميع طلباتك</button>
+      <button class="btn ghost sm" onclick="go('purchase')">&#8631; عرض السلة كاملة في صفحة الشراء</button>
+      <button class="btn ghost sm" onclick="clearAllDrafts()">مسح المُعد</button>
+    </div>
+    <div style="margin-top:8px;font-size:12.5px">
+      ${orderOpen()?'تبقى طلباتك محفوظة حتى ترسلها، واضغط على أي قسم لتأجيله إلى الأسبوع القادم.'
+        :`<b>انتهى موعد استقبال الطلبات لهذا الأسبوع.</b> ستبقى طلباتك محفوظة وتُرسل بعد فتح الموعد القادم
+          (${h(nextWindowText())}).`}
+    </div></div>`;
+}
+function basketCard(){
+  const c=draftCounts();
+  if(!c.cons&&!c.asset)return '';
+  const nx=DRAFT.next||{};
+  const mk=kind=>Object.keys(DRAFT[kind]||{}).map(id=>{
+    const o=(kind==='asset'?S.assets:S.items).find(x=>x.id===id);
+    return o?{id,name:o.name,qty:num(DRAFT[kind][id].qty),unit:o.unit,notes:DRAFT[kind][id].notes}:null;
+  }).filter(Boolean);
+  const sec=(kind,title,list)=>list.length?`
+    <div class="sec-title">${h(title)} (${list.length})
+      <button class="btn ghost sm" style="margin-inline-start:8px" onclick="toggleNextWeek('${kind}')">
+        ${nx[kind]?'إلغاء التأجيل':'تأجيل للأسبوع القادم'}</button>
+      ${nx[kind]?'<span class="pill p-info">للأسبوع القادم</span>':''}</div>
+    <div class="tw"><table><thead><tr><th class="nos">الصنف</th><th class="nos">الكمية</th>
+      <th class="nos">الوحدة</th><th class="nos">ملاحظات</th><th class="nos"></th></tr></thead>
+      <tbody>${list.map(x=>`<tr><td style="text-align:right">${h(x.name)}</td><td class="mono">${x.qty}</td>
+        <td>${h(x.unit)}</td><td>${h(x.notes||'')}</td>
+        <td><button class="btn ghost sm" onclick="dropDraft('${kind}','${x.id}')">إزالة</button></td></tr>`).join('')}
+      </tbody></table></div>`:'';
+  return `<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>سلة الطلبات المحفوظة</h3>
+    <span class="pill p-gold" style="margin-inline-start:auto">مفصولة حسب النوع</span></div>
+    <div class="card-b">
+      <div class="note info" style="margin-bottom:10px">هذه الأصناف تُطلب من المخزن (بلا شراء) وتُرسل كطلبات مستقلة
+        عند ضغط «إرسال جميع طلباتك»، وتبقى محفوظة حتى ترسلها.</div>
+      ${sec('cons','مواد استهلاكية من المخزن',mk('cons'))}
+      ${sec('asset','أصول ثابتة (عهدة)',mk('asset'))}
+    </div></div>`;
+}
+function dropDraft(kind,id){
+  if(kind==='pur')DRAFT.pur=DRAFT.pur.filter((x,i)=>String(i)!==String(id));
+  else delete DRAFT[kind][id];
+  draftSave();renderPage();
 }
 function clearAllDrafts(){
   confirmBox('مسح الطلبات المُعدّة','سيُمسح كل ما أعددته ولم ترسله.',()=>{
@@ -1535,14 +1609,26 @@ function draftLines(kind){
   }).filter(Boolean);
 }
 function sendAllDrafts(){
-  if(ses.role!=='club')return;
+  if(ses.role!=='club'&&!can('manager'))return;
+  if(!orderClub())return toast('اختر النادي الذي يُقدَّم الطلب باسمه','dan');
   if(!clubCanOrder())return;
-  const c=draftLines('cons'),a=draftLines('asset');
+  const nx=DRAFT.next||{};
+  const c=nx.cons?[]:draftLines('cons'),a=nx.asset?[]:draftLines('asset');
   const errs=[...c,...a].filter(x=>x.err);
   if(errs.length)return toast(errs[0].err,'dan');
-  const pur=(DRAFT.pur||[]).filter(x=>x.name&&num(x.qty)>0).map(x=>({id:uid(),refId:null,name:canonName(x.name),
+  const pur=((DRAFT.next||{}).pur?[]:(DRAFT.pur||[])).filter(x=>x.name&&num(x.qty)>0)
+    .map(x=>({id:uid(),refId:null,name:canonName(x.name),
     unit:x.unit||'حبة',cat:x.cat||'',qty:num(x.qty),notes:x.spec||'',cls:'',status:'pending',done:0}));
-  if(!c.length&&!a.length&&!pur.length)return toast('لا توجد طلبات مُعدّة','dan');
+  if(!c.length&&!a.length&&!pur.length)
+    return toast('لا توجد طلبات جاهزة — الأقسام المؤجَّلة للأسبوع القادم لا تُرسل الآن','dan');
+  if(!orderOpen()&&ses.role==='club'&&lateOkClub(orderClub())&&pur.length){
+    return confirmBox('إرسال طلب الشراء بعد الموعد',
+      `<div class="note">الموعد الأسبوعي منتهٍ، وناديكم مسموح له بإرسال <b>طلبات الشراء</b> فقط.
+        ${(c.length||a.length)?'ستبقى طلبات المواد والأصول محفوظة للأسبوع القادم.':''}</div>`,()=>{
+      const r=newReq('purchase',pur);r.status='classify';r.kindHint='mixed';draftClear('pur');
+      save();renderPage();toast('أُرسل طلب الشراء '+r.no,'ok');go('reqs');
+    },'gold');
+  }
   withWindow('سيُرسل ما أعددته: '+[c.length?c.length+' مادة استهلاكية':'',a.length?a.length+' أصل ثابت':'',
       pur.length?pur.length+' صنف شراء':''].filter(Boolean).join(' · '),()=>{
     const made=[];
@@ -1559,15 +1645,26 @@ function sendAllDrafts(){
   });
 }
 function pgCons(){return consManageView()}
+function behalfBar(){
+  if(ses.role==='club')return '';
+  return `<div class="note" style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <b>تقديم الطلب باسم نادٍ:</b>
+    <select onchange="F.onBehalf=this.value;renderPage()" style="width:auto;min-width:220px">
+      <option value="">— اختر النادي —</option>
+      ${S.clubs.map(c=>`<option value="${c.id}" ${F.onBehalf===c.id?'selected':''}>${h(c.name)}</option>`).join('')}</select>
+    ${F.onBehalf?`<span class="pill p-ok">سيُسجَّل الطلب باسم ${h(clubName(F.onBehalf))} وبِاسمك كمُقدِّم</span>`
+      :'<span class="pill p-dan">اختر ناديًا قبل الإرسال</span>'}</div>`;
+}
+function orderClub(){return ses.role==='club'?ses.clubId:F.onBehalf}
 function pgNewCons(){
-  if(ses.role!=='club')return `<div class="card"><div class="empty"><b>طلب المواد يُقدَّم من حساب النادي</b>
-    راجع «متابعة الطلبات» لمعالجة الطلبات الواردة.</div></div>`;
-  return consOrderView();
+  if(ses.role!=='club'&&!can('manager'))return `<div class="card"><div class="empty">
+    <b>طلب المواد يُقدَّم من حساب النادي</b>راجع «متابعة الطلبات» لمعالجة الطلبات الواردة.</div></div>`;
+  return behalfBar()+consOrderView();
 }
 function pgNewAsset(){
-  if(ses.role!=='club')return `<div class="card"><div class="empty"><b>طلب الأصول يُقدَّم من حساب النادي</b>
-    راجع «متابعة الطلبات» لمعالجة الطلبات الواردة.</div></div>`;
-  return assetOrderView();
+  if(ses.role!=='club'&&!can('manager'))return `<div class="card"><div class="empty">
+    <b>طلب الأصول يُقدَّم من حساب النادي</b>راجع «متابعة الطلبات» لمعالجة الطلبات الواردة.</div></div>`;
+  return behalfBar()+assetOrderView();
 }
 function consOrderView(){
   const rows=S.items.filter(i=>i.active).map(i=>`<tr>
@@ -1582,7 +1679,7 @@ function consOrderView(){
       :`<span class="pill p-dan">غير متوفرة</span>`}</td>
     <td><input type="text" id="n_${i.id}" placeholder="ملاحظة" ${DRAFT.cons[i.id]?'':'disabled'}
       value="${DRAFT.cons[i.id]?h(DRAFT.cons[i.id].notes||''):''}" oninput="dSet('cons','${i.id}')"></td></tr>`).join('');
-  return `${frozenBanner()}${draftBar()}${windowBanner()}${kitBtn()}
+  return `${frozenBanner()}${custodyNote()}${draftBar()}${windowBanner()}${kitBtn()}
   <div class="note info" style="margin-bottom:14px">المواد الاستهلاكية تُصرف ولا تُسجّل عهدة على النادي ولا يُطلب إرجاعها. إذا لم تجد المادة، أنشئ
     <a onclick="go('purchase')" style="cursor:pointer;font-weight:700">طلب شراء</a>.</div>
   <div class="card"><div class="card-h"><h3>طلب مواد استهلاكية من المخزن</h3>
@@ -1622,6 +1719,7 @@ function collectSel(list,pfx){
   return lines;
 }
 function submitConsReq(){
+  if(!orderClub())return toast('اختر النادي الذي يُقدَّم الطلب باسمه','dan');
   if(ses.role==='club'&&!clubCanOrder())return;
   const lines=collectSel(S.items.filter(i=>i.active),'consumable');
   if(lines===null)return;
@@ -1631,12 +1729,24 @@ function submitConsReq(){
     save(); toast('أُرسل الطلب برقم '+r.no,'ok'); go('reqs');
   });
 }
+function newReqFor(clubId,kind,lines){
+  const keep=ses.clubId;
+  ses.clubId=clubId;
+  const r=newReq(kind,lines);
+  ses.clubId=keep;
+  if(ses.role!=='club')logIt('طلب باسم نادٍ','طلب',r.no,'',clubName(clubId));
+  return r;
+}
 function newReq(kind,lines){
   const late=!orderOpen();
-  const r={id:uid(),no:nextNo(kind==='purchase'?'PR':'MR'),kind,clubId:ses.clubId,userId:ses.id,lines,late,
+  const r={id:uid(),no:nextNo(kind==='purchase'?'PR':'MR'),kind,clubId:ses.clubId||F.onBehalf,userId:ses.id,lines,late,
     status:'review',rejectReason:'',approvedBy:null,supplier:'',
     dates:{created:nowISO(),sent:nowISO(),approved:null,rejected:null,keeper:null,bought:null,grn:null,out:null,closed:null},
     hist:[{ts:nowISO(),by:ses.fullName,txt:'أنشأ الطلب'}]};
+  if(ses.role!=='club'){
+    r.onBehalfBy=ses.fullName;
+    hist(r,'قُدّم الطلب باسم '+clubName(r.clubId)+' بواسطة '+ses.fullName);
+  }
   if(kind==='purchase'){const n=autoClassify(r);if(n)r.autoClassified=n}
   if(late)hist(r,'قُدّم الطلب خارج موعد الطلبات الأسبوعي');
   const pend=pendingReqs(r.clubId);
@@ -2067,7 +2177,7 @@ function assetOrderView(){
       value="${DRAFT.asset[a.id]?h(DRAFT.asset[a.id].notes||''):''}" oninput="dSet('asset','${a.id}')"></td></tr>`}).join('');
   const kst=kitStatus(),kshort=kst.filter(x=>x.short>0);
   const mine=S.custody.filter(c=>c.clubId===ses.clubId&&c.status==='open');
-  return `${frozenBanner()}${draftBar()}${windowBanner()}
+  return `${frozenBanner()}${custodyNote()}${draftBar()}${windowBanner()}
   <div class="note" style="margin-bottom:14px">الأصول الثابتة تُصرف عهدة على النادي ويجب إرجاعها. الأصل المصروف لا يظهر ضمن الرصيد المتاح حتى يُرجَع.</div>
   ${kitBtn()}
   ${mine.length?`<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>عهد مسجّلة على ناديك (${mine.length})</h3>
@@ -2233,9 +2343,9 @@ function saveAsset(id){
 }
 /* ================= طلب الشراء الموحّد ================= */
 function pgPurchase(){
-  if(ses.role!=='club')return `<div class="card"><div class="empty"><b>طلبات الشراء تُنشأ من حساب النادي</b>
-    راجع صفحة الطلبات لمتابعة طلبات الشراء الواردة ومعالجتها.</div></div>`;
-  return `${frozenBanner()}${draftBar()}${windowBanner()}${kitBtn()}
+  if(ses.role!=='club'&&!can('manager'))return `<div class="card"><div class="empty">
+    <b>طلبات الشراء تُنشأ من حساب النادي</b>راجع صفحة الطلبات لمتابعة طلبات الشراء الواردة ومعالجتها.</div></div>`;
+  return `${behalfBar()}${frozenBanner()}${custodyNote()}${draftBar()}${windowBanner()}${kitBtn()}
   <div class="card" style="margin-bottom:14px"><div class="card-h"><h3>طلب شراء موحّد</h3></div>
   <div class="card-b">
     <div class="field"><label>ملاحظات عامة على الطلب</label>
@@ -2250,14 +2360,15 @@ function pgPurchase(){
     <datalist id="itemlist">${[...S.items,...S.assets].map(x=>`<option value="${h(x.name)}">`).join('')}</datalist>
   </div></div>
 
-  <div class="card"><div class="card-h"><h3>أصناف الطلب</h3>
+  <div class="card"><div class="card-h"><h3>أصناف طلب الشراء</h3>
     <div style="margin-inline-start:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn gold" onclick="submitPurchase()">إرسال طلب الشراء</button>
       ${draftBtns()}</div></div>
   <div class="tw"><table id="ptbl"><thead><tr><th class="nos">الصنف</th><th class="nos">الكمية</th><th class="nos">الوحدة</th>
     <th class="nos">التصنيف</th><th class="nos">مواصفات</th><th class="nos"></th></tr></thead>
     <tbody id="plines">${(DRAFT.pur||[]).map(x=>pLineRow(x.name,x.qty,x.unit,x.cat,x.spec)).join('')}</tbody></table></div>
-  <div class="card-b" id="pempty" style="display:${(DRAFT.pur||[]).length?'none':'block'}"><div class="empty"><b>لم تضف أصنافًا بعد</b>الصق قائمة احتياجاتك في المربع أعلاه ثم اضغط «تحويل النص إلى أصناف».</div></div></div>`;
+  <div class="card-b" id="pempty" style="display:${(DRAFT.pur||[]).length?'none':'block'}"><div class="empty"><b>لم تضف أصنافًا بعد</b>الصق قائمة احتياجاتك في المربع أعلاه ثم اضغط «تحويل النص إلى أصناف».</div></div></div>
+  ${basketCard()}`;
 }
 function pLineRow(name,qty,unit,cat,spec){
   const id='pl'+uid();
@@ -2384,7 +2495,7 @@ function purChoice(mode){
   });
 }
 function sendPurchase(lines,kind,note){
-  withWindow(`سيُرسل طلب بـ ${lines.length} صنف إلى مدير المخزن للتصنيف والاعتماد.`,()=>{
+  withWindowP(`سيُرسل طلب بـ ${lines.length} صنف إلى مدير المخزن للتصنيف والاعتماد.`,()=>{
     const r=newReq('purchase',lines); r.kindHint=kind; r.note=note; r.status='classify'; draftClear('pur');
     S.lastSent={by:ses.id,ts:nowISO(),nos:[r.no]}; save();
     toast('أُرسل طلب الشراء برقم '+r.no,'ok'); go('reqs');
@@ -2393,13 +2504,14 @@ function sendPurchase(lines,kind,note){
 
 /* ================= نافذة الطلبات الأسبوعية ================= */
 function orderOpen(){
-  const d=new Date(),day=d.getDay();
-  if(day===0||day===1)return true;
-  if(day===2)return d.getHours()<16;
-  return false;
+  const d=new Date(),day=d.getDay(),hr=d.getHours();
+  if(day===5)return hr>=16;           /* الجمعة: تفتح 4 عصرًا */
+  if(day===6||day===0||day===1)return true;
+  if(day===2)return hr<16;            /* الثلاثاء: تُغلق 4 عصرًا */
+  return false;                        /* الأربعاء والخميس مغلق */
 }
 function windowMsg(){
-  return 'موعد طلبات العهد والمواد الاستهلاكية وطلبات الشراء من الأحد إلى الثلاثاء الساعة 4:00 عصرًا من كل أسبوع.';
+  return 'يفتح استقبال الطلبات يوم الجمعة الساعة 4:00 عصرًا ويُغلق يوم الثلاثاء الساعة 4:00 عصرًا من كل أسبوع.';
 }
 function lateMsg(){
   const wa=S.settings.whatsapp?(' على الواتساب: '+S.settings.whatsapp):' عبر الواتساب';
@@ -2416,6 +2528,20 @@ function pendingReqs(clubId){
   const open=['new','review','classify','approved','keeper','buying','bought','bought_part','received','ready','to_keeper','issued_part'];
   return S.reqs.filter(r=>r.clubId===clubId&&open.includes(r.status));
 }
+function custodyNote(){
+  if(!ses||ses.role!=='club')return '';
+  const open=S.custody.filter(c=>c.clubId===ses.clubId&&c.status==='open'&&custRemain(c)>0);
+  if(!open.length)return '';
+  const qty=open.reduce((a,c)=>a+custRemain(c),0);
+  const late=open.filter(c=>c.dueAt&&c.dueAt<today()).length;
+  return `<div class="note dan" style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <span class="badge2" style="font-size:16px;padding:2px 12px">${open.length}</span>
+    <div style="flex:1"><b>لا تزال لديكم عهد لم تُرجَع بعد</b> — ${open.length} عهدة بإجمالي ${qty} قطعة
+      ${late?`<span class="red-txt">(منها ${late} متأخرة عن موعد الإرجاع)</span>`:''}.
+      <div style="font-size:12.5px">${open.slice(0,4).map(c=>h(c.assetName)+' ('+custRemain(c)+')').join(' · ')}
+        ${open.length>4?' وغيرها':''}</div></div>
+    <button class="btn dan sm" onclick="go('custody')">إرجاع العهد الآن</button></div>`;
+}
 function pendingNote(clubId,forStaff){
   const p=pendingReqs(clubId);
   if(!p.length)return '';
@@ -2424,18 +2550,38 @@ function pendingNote(clubId,forStaff){
     <b>${forStaff?'لدى '+h(clubName(clubId))+' ':'لديكم '}${p.length} طلب معلّق لم يُعتمد أو لم يُشترَ بعد.</b><br>
     ${list}${p.length>5?' وغيرها':''}</div>`;
 }
-function withWindow(title,onOk){
-  const open=orderOpen();
+function withWindowP(t,cb){return withWindow(t,cb,'purchase')}
+function lateOkClub(id){const c=S.clubs.find(x=>x.id===id);return !!(c&&c.lateOk)}
+function withWindow(title,onOk,kind){
+  if(!orderOpen()&&ses.role==='club'&&kind==='purchase'&&lateOkClub(orderClub())){
+    return confirmBox('طلب شراء بعد الموعد',
+      `<div class="note">ناديكم مسموح له بإرسال <b>طلبات الشراء</b> بعد الموعد الأسبوعي.</div>
+       <div style="margin-top:10px">${h(title)}</div>`,onOk,'gold');
+  }
+  if(!orderOpen()&&ses.role==='club'){
+    const wa=(S.settings.whatsapp||'').replace(/[^0-9]/g,'');
+    modal(`<div class="modal sm"><div class="mh"><h3>انتهى موعد استقبال الطلبات</h3>
+      <button onclick="closeModal()">&times;</button></div>
+    <div class="mb"><div class="note dan"><b>لا يمكن إرسال الطلبات بعد الثلاثاء الساعة 4:00 عصرًا.</b><br>
+      سيتم الاحتفاظ بطلباتك كما هي لإرسالها في الموعد القادم (${h(nextWindowText())}).</div>
+      <div class="note" style="margin-top:10px">${h(windowMsg())}</div>
+      ${wa?`<div style="margin-top:10px"><a class="btn ghost sm" target="_blank" rel="noopener"
+        href="https://wa.me/968${wa}?text=${encodeURIComponent('السلام عليكم، لدينا طلب عاجل خارج موعد الطلبات.')}">
+        مراسلة الإدارة على الواتساب لطلب عاجل</a></div>`:''}</div>
+    <div class="mf"><button class="btn gold" onclick="closeModal();holdDrafts()">&#128190; الاحتفاظ بالطلب للأسبوع القادم</button>
+    <button class="btn ghost" onclick="closeModal()">إغلاق</button></div></div>`);
+    return;
+  }
   const pend=ses.role==='club'?pendingNote(ses.clubId,false):'';
-  confirmBox(open?'إرسال الطلب':'خارج موعد الطلبات',
-    (open?'':`<div class="note dan" style="margin-bottom:10px">${h(lateMsg())}</div>`)+pend+`<div>${h(title)}</div>`,
-    onOk,open?'gold':'dan');
+  confirmBox('إرسال الطلب',pend+`<div>${h(title)}</div>`,onOk,'gold');
 }
 /* ================= الطلبات ================= */
 let F={q:'',club:'',kind:'',status:'',from:'',to:''};
 function setF(k,v){F[k]=v;renderPage()}
 function reqFiltered(){
-  return scopedReqs().filter(r=>{
+  const pri=r=>r.status==='await_return'?0:(['closed','rejected','returned','returned_short'].includes(r.status)?2:1);
+  return scopedReqs().slice().sort((a,b)=>pri(a)-pri(b)||
+    String((b.dates||{}).created||'').localeCompare(String((a.dates||{}).created||''))).filter(r=>{
     if(F.club&&r.clubId!==F.club)return false;
     if(F.kind&&r.kind!==F.kind)return false;
     if(F.status&&r.status!==F.status)return false;
@@ -2540,6 +2686,8 @@ function reqActions(r){
   }
   if(ses.role==='admin'&&['keeper','approved','ready','received','to_keeper','issued_part','buying','bought','bought_part'].includes(r.status))
     a.push({t:'صرف مباشر',fn:`approveIssueNow('${r.id}')`,cls:'ok'});
+  if(ses.role==='admin'&&r.lines.some(l=>(l.done||0)>0))
+    a.push({t:'إرجاع المصروف للمخزون',fn:`reverseIssue('${r.id}')`,cls:'dan'});
   if(r.kind==='purchase'){
     if(can('manager','supervisor')&&['keeper','buying'].includes(r.status))
       a.push({t:'تسجيل الشراء',fn:`buyModal('${r.id}')`,cls:'gold'});
@@ -2615,7 +2763,7 @@ function openReq(id){
       <b>${r.kitShort.map(x=>h(x.name)+' ('+x.qty+')').join(' · ')}</b></div>`:''}
     <div class="kv" style="margin:12px 0 16px">
       <b>النادي</b><span>${h(clubName(r.clubId))}</span>
-      <b>مقدم الطلب</b><span>${h(userName(r.userId))}</span>
+      <b>مقدم الطلب</b><span>${h(userName(r.userId))}${r.onBehalfBy?' — قُدّم باسم النادي بواسطة '+h(r.onBehalfBy):''}</span>
       <b>الحالة</b><span>${pill(r.status)}</span>
       <b>تاريخ الإنشاء</b><span>${fmtDT(r.dates.created)}${r.late?' <span class="pill p-warn">خارج موعد الطلبات</span>':''}</span>
       ${r.dates.approved?`<b>تاريخ الاعتماد</b><span>${fmtDT(r.dates.approved)} — ${h(r.approvedBy||'')}</span>`:''}
@@ -2719,6 +2867,57 @@ function setCls(rid,lid,v){
   l.cls=v;rememberCls(l.name,v,l.cat);save();logIt('تصنيف صنف','طلب',r.no,'',l.name+' → '+(v==='asset'?'أصل ثابت':'مادة استهلاكية'));
 }
 function hist(r,txt){r.hist.push({ts:nowISO(),by:ses.fullName,txt})}
+function reverseIssue(id){
+  if(ses.role!=='admin')return toast('هذا الإجراء لمدير النظام','dan');
+  const r=S.reqs.find(x=>x.id===id);
+  const tot=r.lines.reduce((a,l)=>a+num(l.done),0);
+  if(!tot)return toast('لا توجد كميات مصروفة لإرجاعها','dan');
+  confirmBox('إرجاع المصروف للمخزون',
+    `سيُعاد ${tot} وحدة من الطلب ${h(r.no)} إلى المخزون، وتُلغى عهده القائمة، وتُسجَّل الحركة في التدقيق.`,()=>{
+    let n=0;
+    r.lines.forEach(l=>{
+      const q=num(l.done); if(!q)return;
+      const cls=l.cls||(r.kind==='asset'?'asset':'consumable');
+      const t=cls==='asset'?assetById(l.refId):itemById(l.refId);
+      if(t){const before=t.qty;t.qty+=q;
+        addMove('إرجاع مصروف للمخزون',cls==='asset'?'أصل ثابت':'مادة استهلاكية',t.name,q,before,t.qty,
+          'إرجاع بواسطة مدير النظام',r.no,r.clubId);}
+      l.done=0;l.status='pending';n+=q;
+    });
+    S.custody.filter(c=>c.reqId===r.id).forEach(c=>{
+      c.status='returned';c.retQty=c.qty;c.dmgPending=0;c.returnReq=false;
+      c.notes=(c.notes||'')+' — أُلغيت بإرجاع المصروف';
+    });
+    r.status=r.kind==='purchase'?'ready':'keeper';
+    hist(r,'أرجع مدير النظام المصروف إلى المخزون ('+n+' وحدة)');
+    logIt('إرجاع مصروف للمخزون','طلب',r.no,n,'أُعيد للمخزون');
+    notify('أُعيد مصروف الطلب '+r.no+' إلى المخزون','keeper');
+    notify('أُعيد مصروف طلبكم '+r.no+' إلى المخزون','club',r.clubId);
+    runAlerts();save();closeModal();renderPage();toast('أُعيد '+n+' وحدة إلى المخزون','ok');
+  },'dan');
+}
+function forceReturn(cid){
+  if(ses.role!=='admin')return toast('هذا الإجراء لمدير النظام','dan');
+  const c=S.custody.find(x=>x.id===cid);const rem=custRemain(c);
+  if(rem<=0)return toast('لا يوجد متبقٍ على النادي','dan');
+  confirmBox('استرجاع العهدة مباشرة',
+    `سيُعاد ${rem} من «${h(c.assetName)}» إلى المخزون باسم ${h(clubName(c.clubId))} دون انتظار طلب النادي.`,()=>{
+    const a=assetById(c.assetId);
+    if(a){const before=a.qty;a.qty+=rem;
+      addMove('إرجاع عهدة','أصل ثابت',a.name,rem,before,a.qty,'استرجاع مباشر بواسطة مدير النظام',c.no,c.clubId)}
+    c.retQty=(c.retQty||0)+rem;c.returnReq=false;c.reqQty=0;c.reqDmg=0;
+    c.retDate=nowISO();c.receivedBy=clubOfficer(c.clubId);c.keeperName=ses.fullName;
+    const v=mkVoucher('AR',{id:null,no:'',clubId:c.clubId},
+      [{name:c.assetName,code:c.assetCode,unit:a?a.unit:'حبة',qty:c.qty,qty2:c.retQty,qty3:custRemain(c),
+        cond:'سليم',notes:'استرجاع مباشر بواسطة مدير النظام'}],
+      {receiver:clubOfficer(c.clubId),keeper:ses.fullName,date:nowISO(),clubId:c.clubId,
+       notes:'استرجاع مباشر — سند الخروج '+c.no});
+    c.retVoucher=v.id;refreshCustStatus(c);
+    logIt('استرجاع عهدة مباشر','سند',v.no,rem,'أُعيدت للمخزون');
+    notify('استُرجعت عهدة '+c.assetName+' من ناديكم بسند '+v.no,'club',c.clubId);
+    save();renderPage();toast('استُرجعت العهدة وصدر السند '+v.no,'ok');
+  },'dan');
+}
 function approveIssueNow(id){
   if(ses.role!=='admin')return toast('هذا الإجراء لمدير النظام','dan');
   const r=S.reqs.find(x=>x.id===id);
@@ -3541,7 +3740,13 @@ function pgCustody(){
     <button class="btn ghost" onclick="exportTable('tblCu','سجل_العهد')">&#128202; Excel</button>
     ${can('manager')?`<button class="btn ghost" onclick="document.querySelectorAll('.rc').forEach(x=>x.checked=true)">تحديد الكل</button>
     <button class="btn ghost" onclick="document.querySelectorAll('.rc').forEach(x=>x.checked=false)">إلغاء التحديد</button>
-    <button class="btn gold" onclick="bulkReceive()">قبول استرجاع المحدد</button>`:''}</div>
+    <div class="dd"><button class="btn gold" onclick="ddToggle(this)">&#8630; استرجاع ▾</button>
+      <div class="dd-menu">
+        <button onclick="bulkReceive()">قبول استرجاع المحدد (بطلب من النادي)</button>
+        <button onclick="forceReturnMany('sel')">استرجاع المحدد مباشرة</button>
+        ${F.club?`<button onclick="forceReturnMany('club')">استرجاع كل عهد ${h(clubName(F.club))}</button>`:''}
+        <button onclick="forceReturnMany('all')">استرجاع كل العهد القائمة</button>
+      </div></div>`:''}</div>
   <div class="toolbar" style="margin-top:-4px">
     ${tabBtn('open','العهد القائمة',open.length,'p-warn')}
     ${tabBtn('back','المسترجعة والمغلقة',back.length,'p-ok')}
@@ -3550,7 +3755,7 @@ function pgCustody(){
     ${tabBtn('cons','عهد استهلاكية',consRows.length,'p-gold')}</div>
   <div class="card"><div class="tw" style="max-height:62vh">${body}</div></div>`;
 }
-function bulkOk(c){return c.returnReq&&!c.kit&&!num(c.reqDmg)&&!num(c.dmgPending)}
+function bulkOk(c){return !c.kit&&!num(c.reqDmg)&&!num(c.dmgPending)&&c.status==='open'&&custRemain(c)>0}
 function custTable(list,idAttr){
   const late=c=>c.status==='open'&&c.dueAt&&c.dueAt<today();
   const bulk=can('manager');
@@ -3558,10 +3763,10 @@ function custTable(list,idAttr){
     const red=c.dmgPending>0||c.rejectNote||c.status==='damaged'||c.status==='short'||late(c);
     const dmg=num(c.reqDmg)||num(c.dmgPending);
     return `<tr class="${red?'red':''}">
-    ${bulk?`<td>${c.returnReq?(bulkOk(c)
+    ${bulk?`<td>${bulkOk(c)
       ?`<input type="checkbox" class="chk rc" data-id="${c.id}">`
-      :`<span title="${c.kit?'حقيبة — تُستلم كاملة من زرها':'يتضمن تالفًا أو مفقودًا — افتح الطلب لمعالجته'}"
-         class="pill p-dan" style="font-size:11px">${c.kit?'حقيبة':'تالف'}</span>`):''}</td>`:''}
+      :(c.status==='open'?`<span title="${c.kit?'حقيبة — تُستلم كاملة من زرها':'يتضمن تالفًا أو مفقودًا — افتح الطلب لمعالجته'}"
+         class="pill p-dan" style="font-size:11px">${c.kit?'حقيبة':'تالف'}</span>`:'')}</td>`:''}
     <td class="mono">${h(c.no)}</td><td class="mono">${h(c.assetCode)}</td>
     <td>${h(c.assetName)}${c.kit?'<div style="font-size:11.5px;color:var(--ink3)">ضمن حقيبة النادي</div>':''}</td>
     <td>${h(clubName(c.clubId))}</td><td class="mono">${c.qty}</td><td class="mono">${c.retQty||0}</td>
@@ -3578,6 +3783,7 @@ function custTable(list,idAttr){
         ?`<button class="btn dan sm" onclick="kitReceiveModal('${c.clubId}')">استلام الحقيبة كاملة</button>`
         :`<button class="btn gold sm" onclick="returnModal('${c.id}')">استلام الإرجاع</button>`):''}
       ${can('manager','keeper')&&c.dmgPending>0?`<button class="btn dan sm" onclick="damageModal('${c.id}')">قرار التالف</button>`:''}
+      ${ses.role==='admin'&&custRemain(c)>0?`<button class="btn dan sm" onclick="forceReturn('${c.id}')">استرجاع مباشر</button>`:''}
       <button class="btn ghost sm" onclick="viewVoucher('${c.voucherId}')">سند الخروج</button>
       ${c.retVoucher?`<button class="btn ghost sm" onclick="viewVoucher('${c.retVoucher}')">سند الإرجاع</button>`:''}
       ${c.dmgVoucher?`<button class="btn ghost sm" onclick="viewVoucher('${c.dmgVoucher}')">سند الإتلاف</button>`:''}
@@ -3605,12 +3811,52 @@ function clubGroups(all){
     }).join('')}</tbody></table>`;
 }
 /* --- استلام جماعي للإرجاع (مدير المخزن ومدير النظام) --- */
+function forceReturnMany(scope){
+  if(!can('manager'))return toast('الاسترجاع المباشر من صلاحية مدير المخزن ومدير النظام','dan');
+  let list=[];
+  if(scope==='sel'){
+    const ids=[...document.querySelectorAll('.rc:checked')].map(x=>x.dataset.id);
+    list=S.custody.filter(c=>ids.includes(c.id)&&bulkOk(c));
+    if(!ids.length)return toast('حدّد عهدة واحدة على الأقل','dan');
+  }else if(scope==='club'){
+    list=S.custody.filter(c=>c.clubId===F.club&&bulkOk(c));
+  }else list=S.custody.filter(c=>bulkOk(c));
+  if(!list.length)return toast('لا توجد عهد قابلة للاسترجاع المباشر','dan');
+  const tot=list.reduce((a,c)=>a+custRemain(c),0);
+  confirmBox('استرجاع مباشر',
+    `<div class="note dan">سيُعاد <b>${tot}</b> قطعة من <b>${list.length}</b> عهدة إلى المخزون مباشرة،
+      ويصدر سند إرجاع لكل نادٍ دون انتظار طلب النادي.</div>`,()=>{
+    const byClub={};list.forEach(c=>{(byClub[c.clubId]=byClub[c.clubId]||[]).push(c)});
+    const vs=[];let n=0;
+    Object.keys(byClub).forEach(cid=>{
+      const lines=[];
+      byClub[cid].forEach(c=>{
+        const rem=custRemain(c),a=assetById(c.assetId);
+        if(a){const before=a.qty;a.qty+=rem;
+          addMove('إرجاع عهدة','أصل ثابت',a.name,rem,before,a.qty,'استرجاع مباشر',c.no,cid)}
+        c.retQty=(c.retQty||0)+rem;c.returnReq=false;c.reqQty=0;c.reqDmg=0;
+        c.retDate=nowISO();c.receivedBy=clubOfficer(cid);c.keeperName=ses.fullName;
+        lines.push({name:c.assetName,code:c.assetCode,unit:a?a.unit:'حبة',qty:c.qty,qty2:c.retQty,
+          qty3:custRemain(c),cond:'سليم',notes:'استرجاع مباشر'});
+        n+=rem;
+      });
+      const v=mkVoucher('AR',{id:null,no:'',clubId:cid},lines,
+        {receiver:clubOfficer(cid),keeper:ses.fullName,date:nowISO(),clubId:cid,notes:'استرجاع مباشر للعهد'});
+      byClub[cid].forEach(c=>{c.retVoucher=v.id;refreshCustStatus(c)});
+      vs.push(v.no);
+      notify('استُرجعت عهد ناديكم بسند '+v.no,'club',cid);
+    });
+    logIt('استرجاع مباشر جماعي','سند',vs.join(' ، '),'',n+' قطعة');
+    save();closeModal();renderPage();
+    toast('استُرجع '+n+' قطعة وصدرت السندات: '+vs.join(' ، '),'ok');
+  },'dan');
+}
 function bulkReceive(){
   if(!can('manager'))return toast('الاستلام الجماعي من صلاحية مدير المخزن ومدير النظام','dan');
   const ids=[...document.querySelectorAll('.rc:checked')].map(x=>x.dataset.id);
   if(!ids.length)return toast('حدّد عهدة واحدة على الأقل من طلبات الإرجاع','dan');
-  const list=S.custody.filter(c=>ids.includes(c.id)&&bulkOk(c));
-  if(!list.length)return toast('العهد المحددة تتضمن تالفًا أو حقيبة — تُعالج بفتح الطلب','dan');
+  const list=S.custody.filter(c=>ids.includes(c.id)&&bulkOk(c)&&c.returnReq);
+  if(!list.length)return toast('لا توجد طلبات إرجاع ضمن المحدد — استخدم «استرجاع المحدد مباشرة»','dan');
   modal(`<div class="modal"><div class="mh"><h3>قبول استرجاع ${list.length} عهدة</h3><button onclick="closeModal()">&times;</button></div>
   <div class="mb">
     <div class="note info">تُقبل الكميات كما طلبها النادي وتدخل المخزن مباشرة، ويصدر سند إرجاع لكل نادٍ.
@@ -4182,10 +4428,14 @@ function pgUsers(){
     ${c.frozen?`<div class="red-txt" style="font-size:11.5px">مجمّد${c.freezeReason?': '+h(c.freezeReason):''}</div>`:''}</td>
     <td class="mono">${S.users.filter(u=>u.clubId===c.id).length}</td>
     <td class="mono">${S.custody.filter(x=>x.clubId===c.id&&x.status==='open').length}</td>
-    <td>${c.frozen?'<span class="pill p-dan">مجمّد عن الطلبات</span>':'<span class="pill p-ok">يستطيع الطلب</span>'}</td>
+    <td>${c.frozen?'<span class="pill p-dan">مجمّد عن الطلبات</span>':'<span class="pill p-ok">يستطيع الطلب</span>'}
+      ${c.lateOk?'<div><span class="pill p-gold">شراء بعد الموعد مسموح</span></div>':''}</td>
     <td style="display:flex;gap:6px">
       ${can('admin')?`<button class="btn ghost sm ibtn" title="تعديل النادي" onclick="clubForm('${c.id}')">&#9998;</button>`:''}
       ${can('admin')?`<button class="btn dan sm ibtn" title="حذف النادي" onclick="delClub('${c.id}')">&#128465;</button>`:''}
+      ${can('manager')?`<button class="btn ${c.lateOk?'ok':'ghost'} sm ibtn"
+        title="${c.lateOk?'إيقاف السماح بطلبات الشراء بعد الموعد':'السماح بطلبات الشراء بعد الموعد'}"
+        onclick="toggleLateOk('${c.id}')">&#9200;</button>`:''}
       ${can('manager')?(c.frozen
         ?`<button class="btn ok sm ibtn" title="رفع التجميد" onclick="unfreezeClub('${c.id}')">&#9211;</button>`
         :`<button class="btn dan sm ibtn" title="تجميد النادي عن الطلبات" onclick="freezeClub('${c.id}')">&#10062;</button>`):''}
@@ -4413,6 +4663,15 @@ function saveUser(id){
     logIt('إنشاء مستخدم','مستخدم',un,'',ROLES[r]);
   }
   save();closeModal();renderPage();toast('حُفظ المستخدم','ok');
+}
+function toggleLateOk(id){
+  if(!can('manager'))return toast('هذا الإجراء من صلاحية مدير المخزن ومدير النظام','dan');
+  const c=S.clubs.find(x=>x.id===id);
+  c.lateOk=!c.lateOk;
+  logIt('صلاحية الشراء بعد الموعد','نادٍ',c.name,'',c.lateOk?'مسموح':'موقوف');
+  notify(c.lateOk?'سُمح لناديكم بإرسال طلبات الشراء بعد الموعد الأسبوعي'
+    :'أُوقف السماح بإرسال طلبات الشراء بعد الموعد','club',id);
+  save();renderPage();toast(c.lateOk?'سُمح للنادي بالشراء بعد الموعد':'أُوقف السماح','ok');
 }
 function freezeClub(id){
   if(!can('manager'))return toast('التجميد من صلاحية مدير المخزن ومدير النظام','dan');
@@ -5182,6 +5441,120 @@ function doInvReset(){
   save();closeModal();renderPage();
   toast('اعتُمد الجرد: '+items.length+' مادة و'+assets.length+' أصل'+(renum.length?' — أُعيد ترقيم '+renum.length+' أصل لتكرار الرقم':''),'ok');
   if(renum.length)setTimeout(()=>toast('أُعيد ترقيم: '+renum.join(' · '),'dan'),1200);
+}
+/* ================= الأصناف الأكثر طلبًا ================= */
+function topRequested(mine){
+  const m={};
+  S.reqs.forEach(r=>{
+    if(mine&&r.clubId!==ses.clubId)return;
+    r.lines.forEach(l=>{
+      const k=normName(l.name);if(!k)return;
+      const cls=l.cls||(r.kind==='asset'?'asset':r.kind==='purchase'?'':'consumable');
+      m[k]=m[k]||{name:canonName(l.name),cls:cls||'consumable',unit:l.unit||'حبة',reqs:0,qty:0,done:0,
+        clubs:{},last:null,lastQty:0,purchase:0};
+      const o=m[k];
+      o.reqs++;o.qty+=num(l.qty);o.done+=num(l.done);
+      if(r.kind==='purchase')o.purchase++;
+      if(cls)o.cls=cls;
+      o.clubs[r.clubId]=1;
+      const d=(r.dates||{}).created||'';
+      if(!o.last||d>o.last){o.last=d;o.lastQty=num(l.qty)}
+    });
+  });
+  return Object.values(m).sort((a,b)=>b.reqs-a.reqs||b.qty-a.qty);
+}
+function topStock(t){
+  const pool=t.cls==='asset'?S.assets:S.items;
+  const o=pool.find(x=>normName(x.name)===normName(t.name)&&x.active!==false);
+  return o?{id:o.id,qty:o.qty,code:o.code,unit:o.unit}:null;
+}
+function pgTop(){
+  const mine=F.topMine==='1';
+  const list=topRequested(mine).slice(0,80);
+  const onBehalf=(ses.role!=='club');
+  const rows=list.map((t,i)=>{
+    const st=topStock(t);
+    return `<tr><td><input type="checkbox" class="chk tb" data-i="${i}"></td>
+      <td class="mono">${i+1}</td>
+      <td style="text-align:right;font-weight:700">${h(t.name)}
+        <div style="font-size:11.5px;color:var(--ink3)">${t.cls==='asset'?'أصل ثابت':'مادة استهلاكية'}
+          ${st?' · '+h(st.code):' · غير مسجّل في المخزن'}</div></td>
+      <td class="mono">${t.reqs}</td><td class="mono">${t.qty}</td><td class="mono">${t.done}</td>
+      <td class="mono">${Object.keys(t.clubs).length}</td>
+      <td class="mono">${st?st.qty:'—'}</td>
+      <td>${fmtD(t.last)}</td>
+      <td><input type="number" min="1" id="tq_${i}" value="" placeholder="الكمية" style="width:100px"></td></tr>`;
+  }).join('');
+  return `<div class="toolbar">
+    <button class="btn ${!mine?'gold':'ghost'} sm" onclick="F.topMine='0';renderPage()">كل النوادي</button>
+    ${ses.role==='club'?`<button class="btn ${mine?'gold':'ghost'} sm" onclick="F.topMine='1';renderPage()">طلبات ناديكم</button>`:''}
+    ${onBehalf?`<select onchange="F.onBehalf=this.value;renderPage()" title="الطلب باسم نادٍ">
+      <option value="">— اختر النادي للطلب باسمه —</option>
+      ${S.clubs.map(c=>`<option value="${c.id}" ${F.onBehalf===c.id?'selected':''}>${h(c.name)}</option>`).join('')}</select>`:''}
+    <button class="btn ghost" onclick="document.querySelectorAll('.tb').forEach(x=>x.checked=true)">تحديد الكل</button>
+    <button class="btn ghost" onclick="document.querySelectorAll('.tb').forEach(x=>x.checked=false)">إلغاء التحديد</button>
+    <button class="btn gold" onclick="topReorder('draft')">&#10133; إضافة المحدد إلى طلباتي المُعدّة</button>
+    <button class="btn ok" onclick="topReorder('send')">&#128228; إعادة طلب المحدد الآن</button>
+    <button class="btn ghost" onclick="printTable('tblTop','الأصناف الأكثر طلبًا')">&#128424; طباعة</button>
+    <button class="btn ghost" onclick="exportTable('tblTop','الأكثر_طلبًا')">&#128202; Excel</button></div>
+  <div class="note info" style="margin-bottom:14px">ترتيب الأصناف حسب عدد مرات طلبها من النوادي.
+    حدّد ما تريد، عدّل الكمية، ثم أضفه إلى طلباتك المُعدّة أو أعد طلبه مباشرة.
+    ${onBehalf?'<b>يمكنك اختيار نادٍ من القائمة أعلاه لتقديم الطلب باسمه.</b>':''}</div>
+  <div class="card"><div class="tw" style="max-height:62vh"><table id="tblTop"><thead><tr><th class="nos"></th>
+    <th>م</th><th>الصنف</th><th>مرات الطلب</th><th>إجمالي المطلوب</th><th>المصروف</th><th>عدد النوادي</th>
+    <th>الرصيد الحالي</th><th>آخر طلب</th><th class="nos">الكمية المطلوبة</th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="10"><div class="empty"><b>لا توجد طلبات سابقة</b>
+      ستظهر هنا الأصناف الأكثر طلبًا بعد أول الطلبات.</div></td></tr>`}</tbody></table></div></div>`;
+}
+function topReorder(mode){
+  const mine=F.topMine==='1';
+  const list=topRequested(mine).slice(0,80);
+  const sel=[...document.querySelectorAll('.tb:checked')].map(x=>{
+    const i=num(x.dataset.i),t=list[i];
+    const q=num((document.getElementById('tq_'+i)||{}).value);
+    return {t,q};
+  });
+  if(!sel.length)return toast('حدّد صنفًا واحدًا على الأقل','dan');
+  const noQty=sel.filter(x=>!x.q);
+  if(noQty.length)return toast('أدخل الكمية المطلوبة لـ«'+noQty[0].t.name+'»','dan');
+  const club=ses.role==='club'?ses.clubId:F.onBehalf;
+  if(!club)return toast('اختر النادي الذي سيُقدَّم الطلب باسمه','dan');
+  if(clubFrozen(club))return toast('النادي مجمّد عن الطلبات','dan');
+  const cons=[],asst=[],pur=[];
+  sel.forEach(({t,q})=>{
+    const st=topStock(t);
+    if(st&&st.qty>0){
+      const take=Math.min(q,st.qty);
+      const row={id:uid(),refId:st.id,name:t.name,unit:st.unit||t.unit,qty:take,notes:'إعادة طلب',
+        cls:t.cls==='asset'?'asset':'consumable',status:'pending',done:0};
+      (t.cls==='asset'?asst:cons).push(row);
+      if(q>take)pur.push({id:uid(),refId:null,name:t.name,unit:t.unit,qty:q-take,notes:'إعادة طلب — الكمية الناقصة',
+        cls:t.cls==='asset'?'asset':'consumable',status:'pending',done:0});
+    }else{
+      pur.push({id:uid(),refId:null,name:t.name,unit:t.unit,qty:q,notes:'إعادة طلب — غير متوفر',
+        cls:t.cls==='asset'?'asset':'consumable',status:'pending',done:0});
+    }
+  });
+  if(mode==='draft'){
+    cons.forEach(l=>{DRAFT.cons[l.refId]={qty:l.qty,notes:l.notes}});
+    asst.forEach(l=>{DRAFT.asset[l.refId]={qty:l.qty,notes:l.notes}});
+    pur.forEach(l=>{DRAFT.pur.push({name:l.name,qty:l.qty,unit:l.unit,cat:'',spec:l.notes})});
+    draftSave();renderPage();
+    return toast('أُضيف '+sel.length+' صنفًا إلى طلباتك المُعدّة — راجعها ثم أرسلها','ok');
+  }
+  confirmBox('إعادة طلب المحدد',
+    `سيُرسل باسم <b>${h(clubName(club))}</b>: ${[cons.length?cons.length+' مادة استهلاكية':'',
+      asst.length?asst.length+' أصل ثابت':'',pur.length?pur.length+' صنف شراء':''].filter(Boolean).join(' · ')}`,()=>{
+    const made=[];
+    const mk=(kind,lines)=>{
+      if(!lines.length)return;
+      const r=newReqFor(club,kind,lines);
+      if(kind==='purchase')r.status='classify';
+      made.push(r.no);
+    };
+    mk('consumable',cons);mk('asset',asst);mk('purchase',pur);
+    save();renderPage();toast('أُرسلت الطلبات: '+made.join(' ، '),'ok');go('reqs');
+  },'ok');
 }
 /* ================= معايير توزيع المخزون ================= */
 function quotaOf(id){const q=(S.quota||{})[id];return q&&num(q.max)>0?num(q.max):0}
