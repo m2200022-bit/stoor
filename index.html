@@ -2603,7 +2603,8 @@ function pgReqs(){
     const kitShort=r.kit&&r.kitShort&&r.kitShort.length;
     return `<tr class="${kitShort||r.dup?'red':''}">${bulk?`<td><input type="checkbox" class="chk rb" data-id="${r.id}"></td>`:''}
     <td class="mono">${h(r.no)}</td>
-    <td>${h(kindName(r.kind))}${r.kit?`<div style="font-size:11.5px">${h(r.kitName||'حقيبة النادي')}${kitShort?' <span class="pill p-dan">ناقصة</span>':''}</div>`:''}
+    <td>${h(kindName(r.kind))}${r.kit?`<div style="font-size:11.5px"><span class="pill p-dan">مرتبط بالحقيبة الدائمة</span>
+      ${kitShort?' <span class="pill p-warn">ناقصة</span>':''}</div>`:''}
       ${r.late?'<div><span class="pill p-warn">خارج موعد الطلبات</span></div>':''}
       ${r.dup?'<div><span class="pill p-dan">عهدة قائمة بنفس المسمى</span></div>':''}</td>
     ${ses.role!=='club'?`<td>${h(clubName(r.clubId))}</td>`:''}
@@ -2676,12 +2677,13 @@ function railFor(r){
     return `<div class="${cls}"><i>${s[1]?'✓':i+1}</i>${s[0]}</div>`}).join('')}</div>`;
 }
 function reqActions(r){
+  const unCls=r.kind==='purchase'&&r.lines.some(l=>!l.cls);
   const a=[];
   if(r.status==='rejected'||r.status==='closed')return a;
   /* التصنيف والاعتماد والشراء والتوريد: مدير المخزن أو أمين المخزن أو مشرف النوادي */
   if(can('manager','keeper')&&['review','classify','new'].includes(r.status)){
-    if(ses.role==='admin')a.push({t:'اعتماد وصرف مباشر',fn:`approveIssueNow('${r.id}')`,cls:'ok'});
-    a.push({t:'اعتماد',fn:`approveReq('${r.id}')`,cls:'ok'});
+    if(ses.role==='admin'&&!unCls)a.push({t:'اعتماد وصرف مباشر',fn:`approveIssueNow('${r.id}')`,cls:'ok'});
+    if(!unCls)a.push({t:'اعتماد',fn:`approveReq('${r.id}')`,cls:'ok'});
     a.push({t:'رفض',fn:`rejectReq('${r.id}')`,cls:'dan'});
   }
   if(ses.role==='admin'&&['keeper','approved','ready','received','to_keeper','issued_part','buying','bought','bought_part'].includes(r.status))
@@ -2689,11 +2691,12 @@ function reqActions(r){
   if(ses.role==='admin'&&r.lines.some(l=>(l.done||0)>0))
     a.push({t:'إرجاع المصروف للمخزون',fn:`reverseIssue('${r.id}')`,cls:'dan'});
   if(r.kind==='purchase'){
-    if(can('manager','supervisor')&&['keeper','buying'].includes(r.status))
+    if(can('manager','supervisor')&&['keeper','buying'].includes(r.status)&&!unCls)
       a.push({t:'تسجيل الشراء',fn:`buyModal('${r.id}')`,cls:'gold'});
-    if(can('manager','keeper')&&['bought','bought_part','to_keeper'].includes(r.status))
+    if(can('manager','keeper')&&['bought','bought_part','to_keeper'].includes(r.status)&&!unCls)
       a.push({t:'تسجيل التوريد',fn:`grnModal('${r.id}')`,cls:'gold'});
-    if(can('manager','supervisor')&&!r.purApproved&&['received','ready','to_keeper','bought','bought_part'].includes(r.status))
+    if(can('manager','supervisor')&&!r.purApproved&&!unCls&&
+       ['received','ready','to_keeper','bought','bought_part'].includes(r.status))
       a.push({t:'اعتماد الشراء',fn:`approvePurchase('${r.id}')`,cls:'ok'});
   }
   /* الصرف: مدير المخزن فقط */
@@ -2742,6 +2745,9 @@ function openReq(id){
   modal(`<div class="modal lg"><div class="mh"><h3>طلب ${h(r.no)} — ${h(kindName(r.kind))}</h3><button onclick="closeModal()">&times;</button></div>
   <div class="mb">
     ${railFor(r)}
+    ${r.kind==='purchase'&&r.lines.some(l=>!l.cls)?`<div class="note dan" style="margin:10px 0">
+      <b>التصنيف غير مكتمل.</b> صنّف كل صنف إلى «مادة استهلاكية» أو «أصل ثابت» — لا يُعتمد الطلب ولا يُشترى
+      ولا يُورَّد ولا يُصرف قبل اكتمال التصنيف (المتبقي: ${r.lines.filter(l=>!l.cls).length} صنف).</div>`:''}
     ${r.kind==='purchase'&&!r.purApproved&&['received','ready','to_keeper','bought','bought_part'].includes(r.status)?
       `<div class="note dan" style="margin:10px 0"><b>بانتظار اعتماد الشراء من مشرف النوادي</b> — لا يُصرف للنادي قبله.</div>`:''}
     ${r.purApproved?`<div class="note info" style="margin:10px 0">اعتُمد الشراء بواسطة <b>${h(r.purApprovedBy||'')}</b>
@@ -2758,6 +2764,8 @@ function openReq(id){
       pendingNote(r.clubId,true).replace('طلب معلّق','طلب معلّق آخر'):''}
     ${r.dup?`<div class="note dan" style="margin:10px 0"><b>تنبيه: النادي لديه عهدة قائمة بنفس المسمى ولم تُرجع.</b><br>
       سبب طلب الخروج: ${h(r.dupReason||'')}</div>`:''}
+    ${r.kit?`<div class="note dan" style="margin:10px 0"><b>مرتبط بالحقيبة الدائمة (${h(r.kitName||kitDef().name)}).</b>
+      تُصرف الحقيبة كوحدة واحدة وتُرجَع كاملة بسند إرجاع واحد ولا تُجزّأ عند الاستلام.</div>`:''}
     ${r.kit&&r.kitShort&&r.kitShort.length?`<div class="note dan" style="margin:10px 0">
       ${h(r.kitName||'الحقيبة')} ناقصة المواد التالية وقت الطلب:
       <b>${r.kitShort.map(x=>h(x.name)+' ('+x.qty+')').join(' · ')}</b></div>`:''}
@@ -2921,6 +2929,8 @@ function forceReturn(cid){
 function approveIssueNow(id){
   if(ses.role!=='admin')return toast('هذا الإجراء لمدير النظام','dan');
   const r=S.reqs.find(x=>x.id===id);
+  if(r.kind==='purchase'&&r.lines.some(l=>!l.cls))
+    return toast('صنّف جميع الأصناف أولًا — لا تنتقل المراحل قبل التصنيف','dan');
   confirmBox('اعتماد وصرف مباشر',
     `سيُنفّذ على الطلب ${h(r.no)} دفعة واحدة: الاعتماد${r.kind==='purchase'?' واعتماد الشراء':''} ثم الصرف للنادي وتأكيده.`,()=>{
     if(['review','classify','new'].includes(r.status)){
@@ -3077,6 +3087,7 @@ function bulkClose(){
 function approvePurchase(id){
   if(!can('manager','supervisor'))return toast('اعتماد الشراء من صلاحية مشرف النوادي أو مدير المخزن','dan');
   const r=S.reqs.find(x=>x.id===id);
+  if(r.lines.some(l=>!l.cls))return toast('صنّف جميع الأصناف قبل اعتماد الشراء','dan');
   confirmBox('اعتماد الشراء','باعتماد الشراء يصبح الطلب '+r.no+' جاهزًا للصرف للنادي.',()=>{
     r.purApproved=true;r.purApprovedBy=ses.fullName;r.purApprovedAt=nowISO();
     hist(r,'اعتمد الشراء: '+ses.fullName);
@@ -3139,6 +3150,10 @@ function closeReq(id){
 function buyModal(id){
   if(!can('manager','supervisor'))return toast('اعتماد الشراء وحفظه من صلاحية مشرف النوادي أو مدير المخزن','dan');
   const r=S.reqs.find(x=>x.id===id);
+  if(r.kind==='purchase'&&r.lines.some(l=>!l.cls))
+    return toast('لا يمكن الشراء قبل تصنيف الأصناف — صنّف كل صنف إلى مادة استهلاكية أو أصل ثابت أولًا','dan');
+  if(!r.approvedBy&&!['buying','bought','bought_part'].includes(r.status))
+    return toast('لا يمكن الشراء قبل اعتماد الطلب','dan');
   const need=r.lines.filter(l=>!(l.fromStock&&l.grn>=l.qty));
   if(!need.length){toast('لا توجد أصناف بحاجة إلى شراء — كل الأصناف متوفرة في المخزن وجاهزة للصرف','ok');return}
   const rows=need.map(l=>`<tr><td>${h(l.name)}${l.fromStock?'<div style="font-size:11.5px;color:var(--ok)">جزء منه متوفر بالمخزن</div>':''}</td><td class="mono">${l.qty}</td><td>${h(l.unit)}</td>
@@ -3207,6 +3222,8 @@ function saveBuy(id){
 function grnModal(id){
   if(!can('manager','keeper'))return toast('هذا الإجراء من صلاحية مدير المخزن أو أمين المخزن أو مشرف النوادي','dan');
   const r=S.reqs.find(x=>x.id===id);
+  if(r.kind==='purchase'&&r.lines.some(l=>!l.cls))
+    return toast('صنّف جميع الأصناف قبل التوريد','dan');
   const ls=r.lines.filter(l=>(l.bought||0)>0&&!(l.grn>=l.bought));
   if(!ls.length){toast('لا توجد أصناف مشتراة بانتظار التوريد','dan');return}
   const rows=ls.map(l=>`<tr><td>${h(l.name)}</td><td>${l.cls==='asset'?'أصل ثابت':'مادة استهلاكية'}</td>
@@ -3295,6 +3312,8 @@ function issueModal(id){
   if(ses&&ses.role==='supervisor')return toast('مشرف النوادي لا يصرف — أرسل الطلب للمخزن للصرف','dan');
   if(!can('manager','keeper'))return toast('الصرف من صلاحية أمين المخزن أو مدير المخزن','dan');
   const r=S.reqs.find(x=>x.id===id);
+  if(r.kind==='purchase'&&r.lines.some(l=>!l.cls))
+    return toast('صنّف جميع الأصناف قبل الصرف','dan');
   if(r.kind==='purchase'&&!r.purApproved)
     return toast('بانتظار «اعتماد الشراء» من مشرف النوادي قبل الصرف للنادي','dan');
   const ls=issueLines(r);
@@ -3767,7 +3786,8 @@ function custTable(list,idAttr){
       ?`<input type="checkbox" class="chk rc" data-id="${c.id}">`
       :(c.status==='open'?`<span title="${c.kit?'حقيبة — تُستلم كاملة من زرها':'يتضمن تالفًا أو مفقودًا — افتح الطلب لمعالجته'}"
          class="pill p-dan" style="font-size:11px">${c.kit?'حقيبة':'تالف'}</span>`:'')}</td>`:''}
-    <td class="mono">${h(c.no)}</td><td class="mono">${h(c.assetCode)}</td>
+    <td class="mono">${h(c.no)}${c.kit?'<div style="font-size:11px"><span class="pill p-dan">حقيبة دائمة</span></div>':''}</td>
+    <td class="mono">${h(c.assetCode)}</td>
     <td>${h(c.assetName)}${c.kit?'<div style="font-size:11.5px;color:var(--ink3)">ضمن حقيبة النادي</div>':''}</td>
     <td>${h(clubName(c.clubId))}</td><td class="mono">${c.qty}</td><td class="mono">${c.retQty||0}</td>
     <td class="mono ${c.dmgPending||c.dmgDone?'red-txt':''}">${(c.dmgPending||0)+(c.dmgDone||0)}</td>
