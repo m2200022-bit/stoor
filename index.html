@@ -210,6 +210,12 @@ tr.red td{background:#FDF2F1}
 .field label{display:block;font-weight:600;margin-bottom:5px;font-size:13.5px}
 .field .hint{color:var(--ink3);font-size:12.5px;margin-top:4px}
 .numbig{height:44px;font-size:17px;font-weight:700}
+.yellow-box{background:#fffbe6;border:2px solid #f3d54e;
+  box-shadow:0 0 0 4px rgba(243,213,78,.25),0 0 22px rgba(222,255,0,.35)}
+.yellow-box .card-h{background:#fdf3c4}
+.yellow-box textarea{background:#fffdf0;border-color:#e8cf6a}
+.paste-hint{color:#000;font-size:14.5px;font-weight:700}
+.kit-big{font-size:16px;padding:12px 22px;font-weight:800}
 .sel-dan{border:2px solid var(--dan);background:#FDF2F1;color:var(--dan);font-weight:800;height:44px}
 .sel-dan:focus{box-shadow:0 0 0 3px rgba(168,40,32,.15)}
 input[type=number],input[inputmode=numeric],input[type=date]{text-align:center;direction:ltr;
@@ -696,7 +702,7 @@ function seed(){
   ];
   return {
     v:1, clubs, cats:{c:catsC,a:catsA}, items, assets, users,
-    reqs:[], vouchers:[], custody:[], moves:[], log:[], notes:[], logins:[], resets:[], damages:[], msgs:[], audits:[], clsMap:{}, quota:{}, seq:{},
+    reqs:[], vouchers:[], custody:[], moves:[], log:[], notes:[], logins:[], resets:[], damages:[], msgs:[], audits:[], ideas:[], clsMap:{}, quota:{}, seq:{},
     locations:[{id:uid(),name:'رف A-1',type:'رف'},{id:uid(),name:'رف B-1',type:'رف'},
       {id:uid(),name:'خزانة C',type:'خزانة'},{id:uid(),name:'مستودع خارجي',type:'مستودع'}],
     kits:[{id:uid(),name:'حقيبة النادي الدائمة',lines:[
@@ -720,7 +726,7 @@ function modal(html){
   r.innerHTML='<div class="ov" onclick="if(event.target===this)closeModal()">'+html+'</div>';
   arabize(r);
 }
-function closeModal(){document.getElementById('modalRoot').innerHTML=''}
+function closeModal(){SEL_LINES=null;document.getElementById('modalRoot').innerHTML=''}
 function confirmBox(title,msg,onOk,kind){
   window.__ok=()=>{closeModal();onOk()};
   modal(`<div class="modal sm"><div class="mh"><h3>${h(title)}</h3><button onclick="closeModal()">&times;</button></div>
@@ -1022,8 +1028,7 @@ const NAV=[
     {k:'newcons',t:'طلب مواد استهلاكية',full:'طلب مواد استهلاكية',roles:['club','manager','admin']},
     {k:'top',t:'الأكثر طلبًا',full:'الأصناف الأكثر طلبًا',roles:['club','keeper','supervisor','manager','admin']},
     {k:'reqs',t:'متابعة الطلبات',full:'متابعة الطلبات',roles:['club','keeper','manager','admin'],count:'reqs'},
-    {k:'custody',t:'عهد ناديكم',full:'العهد',roles:['club']},
-    {k:'vouchers',t:'سندات ناديكم',full:'السندات',roles:['club']}
+    {k:'custody',t:'عهد وسندات النادي',full:'عهد وسندات النادي',roles:['club']}
   ]},
   {key:'msgs',g:'رسائل الإدارة',icon:'&#9993;',flat:'clubmsgs',items:[
     {k:'clubmsgs',t:'رسائل الإدارة',full:'رسائل الإدارة وأمين المخزن',roles:['club'],count:'msgs'}
@@ -1579,8 +1584,6 @@ function basketCard(){
   return `<div class="card" style="margin-bottom:14px"><div class="card-h"><h3>سلة الطلبات المحفوظة</h3>
     <span class="pill p-gold" style="margin-inline-start:auto">مفصولة حسب النوع</span></div>
     <div class="card-b">
-      <div class="note info" style="margin-bottom:10px">هذه الأصناف تُطلب من المخزن (بلا شراء) وتُرسل كطلبات مستقلة
-        عند ضغط «إرسال جميع طلباتك»، وتبقى محفوظة حتى ترسلها.</div>
       ${sec('cons','مواد استهلاكية من المخزن',mk('cons'))}
       ${sec('asset','أصول ثابتة (عهدة)',mk('asset'))}
     </div></div>`;
@@ -2345,17 +2348,16 @@ function saveAsset(id){
 function pgPurchase(){
   if(ses.role!=='club'&&!can('manager'))return `<div class="card"><div class="empty">
     <b>طلبات الشراء تُنشأ من حساب النادي</b>راجع صفحة الطلبات لمتابعة طلبات الشراء الواردة ومعالجتها.</div></div>`;
-  return `${behalfBar()}${frozenBanner()}${custodyNote()}${draftBar()}${windowBanner()}${kitBtn()}
-  <div class="card" style="margin-bottom:14px"><div class="card-h"><h3>طلب شراء موحّد</h3></div>
+  return `${behalfBar()}${frozenBanner()}${custodyNote()}${windowBanner()}${kitBtn()}
+  <div class="card yellow-box" style="margin-bottom:14px"><div class="card-h"><h3>طلب شراء موحّد</h3></div>
   <div class="card-b">
-    <div class="field"><label>ملاحظات عامة على الطلب</label>
-      <input id="p_note" placeholder="مواصفات أو موعد الحاجة"></div>
     <div class="sec-title">قائمة الاحتياجات (نسخ ولصق)</div>
     <div class="field"><textarea id="p_paste" placeholder="كرتون ماء 250 مل | 10 كراتين
 أكواب بلاستيكية | 15 عبوة
 آيس بوكس | 3 حبات
 كرة قدم | 5 حبات"></textarea>
-      <div class="hint">اكتب كل صنف في سطر: الاسم ثم | ثم الكمية والوحدة. يحوّل النظام كل سطر إلى صنف مستقل قابل للتعديل.</div></div>
+      <div class="hint paste-hint">اكتب كل صنف في سطر: الاسم ثم | ثم الكمية والوحدة.
+        يحوّل النظام كل سطر إلى صنف مستقل قابل للتعديل.</div></div>
     <button class="btn gold" onclick="parsePaste()">تحويل النص إلى أصناف</button>
     <datalist id="itemlist">${[...S.items,...S.assets].map(x=>`<option value="${h(x.name)}">`).join('')}</datalist>
   </div></div>
@@ -2363,9 +2365,11 @@ function pgPurchase(){
   <div class="card"><div class="card-h"><h3>أصناف طلب الشراء</h3>
     <div style="margin-inline-start:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <button class="btn gold" onclick="submitPurchase()">إرسال طلب الشراء</button>
-      ${draftBtns()}</div></div>
+      <button class="btn ok" onclick="ideaModal()">&#128161; مقترحات للشراء للبرامج القادمة</button>
+      ${draftBtns()}</div>
+    <div class="card-b" style="padding:10px 16px 0">${draftBar()}</div>
   <div class="tw"><table id="ptbl"><thead><tr><th class="nos">الصنف</th><th class="nos">الكمية</th><th class="nos">الوحدة</th>
-    <th class="nos">التصنيف</th><th class="nos">مواصفات</th><th class="nos"></th></tr></thead>
+    ${ses.role==='club'?'':'<th class="nos">التصنيف</th>'}<th class="nos">مواصفات / ملاحظات</th><th class="nos"></th></tr></thead>
     <tbody id="plines">${(DRAFT.pur||[]).map(x=>pLineRow(x.name,x.qty,x.unit,x.cat,x.spec)).join('')}</tbody></table></div>
   <div class="card-b" id="pempty" style="display:${(DRAFT.pur||[]).length?'none':'block'}"><div class="empty"><b>لم تضف أصنافًا بعد</b>الصق قائمة احتياجاتك في المربع أعلاه ثم اضغط «تحويل النص إلى أصناف».</div></div></div>
   ${basketCard()}`;
@@ -2376,7 +2380,7 @@ function pLineRow(name,qty,unit,cat,spec){
     <td><input class="pl-name" value="${h(name)}" onchange="syncPLine(this);saveDraftPur()" list="itemlist"></td>
     <td><input class="pl-qty" type="number" min="1" value="${qty}" oninput="saveDraftPur()"></td>
     <td><input class="pl-unit" value="${h(unit)}" oninput="saveDraftPur()"></td>
-    <td><input class="pl-cat" value="${h(cat)}" oninput="saveDraftPur()"></td>
+    <td style="${ses&&ses.role==='club'?'display:none':''}"><input class="pl-cat" value="${h(cat)}" oninput="saveDraftPur()"></td>
     <td><input class="pl-spec" value="${h(spec||'')}" oninput="saveDraftPur()"></td>
     <td><button class="btn ghost sm" onclick="document.getElementById('${id}').remove();syncPEmpty();saveDraftPur()">إزالة</button></td></tr>`;
 }
@@ -2438,7 +2442,7 @@ function submitPurchase(){
       cls:'',status:'pending',done:0});
   }
   const kind='mixed';
-  const note=document.getElementById('p_note').value;
+  const note='';
   const avail=lines.map(l=>{
     const k=normName(l.name);
     const it=S.items.find(x=>normName(x.name)===k&&x.active),as=S.assets.find(x=>normName(x.name)===k&&x.active);
@@ -2688,18 +2692,21 @@ function reqActions(r){
   }
   if(ses.role==='admin'&&['keeper','approved','ready','received','to_keeper','issued_part','buying','bought','bought_part'].includes(r.status))
     a.push({t:'صرف مباشر',fn:`approveIssueNow('${r.id}')`,cls:'ok'});
-  if(ses.role==='admin'&&r.lines.some(l=>(l.done||0)>0))
-    a.push({t:'إرجاع المصروف للمخزون',fn:`reverseIssue('${r.id}')`,cls:'dan'});
+
   if(r.kind==='purchase'){
     if(can('manager','supervisor')&&['keeper','buying'].includes(r.status)&&!unCls)
       a.push({t:'تسجيل الشراء',fn:`buyModal('${r.id}')`,cls:'gold'});
     if(can('manager','keeper')&&['bought','bought_part','to_keeper'].includes(r.status)&&!unCls)
       a.push({t:'تسجيل التوريد',fn:`grnModal('${r.id}')`,cls:'gold'});
+    if(ses.role==='admin'&&r.lines.some(l=>(l.done||0)>0))
+      a.push({t:'إرجاع المصروف للمخزون',fn:`reverseIssue('${r.id}')`,cls:'dan'});
     if(can('manager','supervisor')&&!r.purApproved&&!unCls&&
        ['received','ready','to_keeper','bought','bought_part'].includes(r.status))
       a.push({t:'اعتماد الشراء',fn:`approvePurchase('${r.id}')`,cls:'ok'});
   }
   /* الصرف: مدير المخزن فقط */
+  if(ses.role==='admin'&&r.kind!=='purchase'&&r.lines.some(l=>(l.done||0)>0))
+    a.push({t:'إرجاع المصروف للمخزون',fn:`reverseIssue('${r.id}')`,cls:'dan'});
   const isSup=ses&&ses.role==='supervisor';
   if(can('manager','keeper')&&!isSup){
     if(r.kind==='purchase'&&r.purApproved&&['received','ready','issued_part','to_keeper'].includes(r.status))
@@ -2722,7 +2729,9 @@ function openReq(id){
   if(r.kind==='purchase'&&['classify','review','new'].includes(r.status)&&autoClassify(r))save();
   const isPurchase=r.kind==='purchase';
   const canClassify=can('manager','keeper')&&['classify','review','new'].includes(r.status)&&isPurchase;
-  const lines=r.lines.map(l=>`<tr><td>${h(l.name)}</td><td class="mono">${l.qty}</td><td>${h(l.unit)}</td>
+  const staff=can('manager','keeper');
+  const lines=r.lines.map(l=>`<tr>${staff?`<td><input type="checkbox" class="chk lnchk" data-id="${l.id}"></td>`:''}
+    <td>${h(l.name)}</td><td class="mono">${l.qty}</td><td>${h(l.unit)}</td>
     <td>${canClassify?`<select onchange="setCls('${r.id}','${l.id}',this.value)">
         <option value="">— اختر —</option>
         <option value="consumable" ${l.cls==='consumable'?'selected':''}>مادة استهلاكية</option>
@@ -2784,7 +2793,16 @@ function openReq(id){
       ${r.supplier?`<b>المورد</b><span>${h(r.supplier)}</span>`:''}
       ${r.note?`<b>ملاحظات الطلب</b><span>${h(r.note)}</span>`:''}
     </div>
-    <div class="tw"><table><thead><tr><th class="nos">الصنف</th><th class="nos">الكمية</th><th class="nos">الوحدة</th>
+    ${staff?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+      <button class="btn ghost sm" onclick="document.querySelectorAll('.lnchk').forEach(x=>x.checked=true)">تحديد الكل</button>
+      <button class="btn ghost sm" onclick="document.querySelectorAll('.lnchk').forEach(x=>x.checked=false)">إلغاء التحديد</button>
+      ${isPurchase?`<button class="btn gold sm" onclick="selAct('${r.id}','buy')">شراء المحدد</button>
+      <button class="btn gold sm" onclick="selAct('${r.id}','grn')">توريد المحدد</button>`:''}
+      <button class="btn gold sm" onclick="selAct('${r.id}','issue')">صرف المحدد</button>
+      ${ses.role==='admin'?`<button class="btn ok sm" onclick="selAct('${r.id}','now')">صرف مباشر للمحدد</button>`:''}
+    </div>`:''}
+    <div class="tw"><table><thead><tr>${staff?'<th class="nos"></th>':''}<th class="nos">الصنف</th>
+      <th class="nos">الكمية</th><th class="nos">الوحدة</th>
       <th class="nos">التصنيف</th><th class="nos">المنفّذ</th><th class="nos">حالة الصنف</th><th class="nos">ملاحظات</th></tr></thead>
       <tbody>${lines}</tbody></table></div>
     ${vs.length?`<div class="sec-title">السندات المرتبطة</div>
@@ -2795,6 +2813,31 @@ function openReq(id){
   <div class="mf">${acts}<button class="btn ghost" onclick="printReq('${r.id}')">&#128424; طباعة</button>
   <button class="btn ghost" onclick="exportReqXls('${r.id}')">&#128202; تنزيل Excel</button>
   <button class="btn ghost" onclick="closeModal()">&times; إغلاق</button></div></div>`);
+}
+let SEL_LINES=null;
+function selAct(id,act){
+  const ids=[...document.querySelectorAll('.lnchk:checked')].map(x=>x.dataset.id);
+  if(!ids.length)return toast('حدّد صنفًا واحدًا على الأقل من جدول الأصناف','dan');
+  SEL_LINES=ids;
+  const r=S.reqs.find(x=>x.id===id);
+  if(act==='buy')buyModal(id);
+  else if(act==='grn')grnModal(id);
+  else if(act==='issue')issueModal(id);
+  else if(act==='now'){
+    if(ses.role!=='admin'){SEL_LINES=null;return toast('هذا الإجراء لمدير النظام','dan')}
+    confirmBox('صرف مباشر للمحدد','سيُصرف '+ids.length+' صنفًا مباشرة مع إصدار السند.',()=>{
+      const keep=r.lines;
+      r.lines=keep.filter(l=>ids.includes(l.id));
+      const res=autoIssue(r,'صرف مباشر للأصناف المحددة');
+      r.lines=keep;SEL_LINES=null;
+      save();closeModal();renderPage();
+      toast(res.n?('صُرف '+res.n+' وحدة'):'لا توجد كميات قابلة للصرف','ok');
+    },'ok');
+  }
+}
+function selFilter(list){
+  if(!SEL_LINES)return list;
+  return list.filter(l=>SEL_LINES.includes(l.id));
 }
 function exportReqXls(id){
   const r=S.reqs.find(x=>x.id===id);
@@ -3154,7 +3197,7 @@ function buyModal(id){
     return toast('لا يمكن الشراء قبل تصنيف الأصناف — صنّف كل صنف إلى مادة استهلاكية أو أصل ثابت أولًا','dan');
   if(!r.approvedBy&&!['buying','bought','bought_part'].includes(r.status))
     return toast('لا يمكن الشراء قبل اعتماد الطلب','dan');
-  const need=r.lines.filter(l=>!(l.fromStock&&l.grn>=l.qty));
+  const need=selFilter(r.lines.filter(l=>!(l.fromStock&&l.grn>=l.qty)));
   if(!need.length){toast('لا توجد أصناف بحاجة إلى شراء — كل الأصناف متوفرة في المخزن وجاهزة للصرف','ok');return}
   const rows=need.map(l=>`<tr><td>${h(l.name)}${l.fromStock?'<div style="font-size:11.5px;color:var(--ok)">جزء منه متوفر بالمخزن</div>':''}</td><td class="mono">${l.qty}</td><td>${h(l.unit)}</td>
     <td>${l.cls==='asset'?'أصل ثابت':'مادة استهلاكية'}</td>
@@ -3224,7 +3267,7 @@ function grnModal(id){
   const r=S.reqs.find(x=>x.id===id);
   if(r.kind==='purchase'&&r.lines.some(l=>!l.cls))
     return toast('صنّف جميع الأصناف قبل التوريد','dan');
-  const ls=r.lines.filter(l=>(l.bought||0)>0&&!(l.grn>=l.bought));
+  const ls=selFilter(r.lines.filter(l=>(l.bought||0)>0&&!(l.grn>=l.bought)));
   if(!ls.length){toast('لا توجد أصناف مشتراة بانتظار التوريد','dan');return}
   const rows=ls.map(l=>`<tr><td>${h(l.name)}</td><td>${l.cls==='asset'?'أصل ثابت':'مادة استهلاكية'}</td>
     <td class="mono">${l.qty}</td><td class="mono">${l.bought}</td>
@@ -3316,7 +3359,7 @@ function issueModal(id){
     return toast('صنّف جميع الأصناف قبل الصرف','dan');
   if(r.kind==='purchase'&&!r.purApproved)
     return toast('بانتظار «اعتماد الشراء» من مشرف النوادي قبل الصرف للنادي','dan');
-  const ls=issueLines(r);
+  const ls=selFilter(issueLines(r));
   if(!ls.length){toast('لا توجد أصناف جاهزة للصرف في هذا الطلب','dan');return}
   const rows=ls.map(l=>{
     const cls=l.cls||(r.kind==='asset'?'asset':'consumable');
@@ -3436,6 +3479,17 @@ function mkVoucher(type,r,lines,o){
     date:o.date||nowISO(),lines,supplier:o.supplier||'',deliverer:o.deliverer||ses.fullName,keeper:o.keeper||'',
     receiver:o.receiver||'',dueAt:o.dueAt||'',notes:o.notes||'',by:ses.fullName,cancelled:false,cancelReason:''};
   S.vouchers.unshift(v);save();return v;
+}
+function vouTable(){
+  const list=scopedVou();
+  return `<table id="tblCu"><thead><tr><th>رقم السند</th><th>النوع</th><th>رقم الطلب</th>
+    <th>التاريخ</th><th>عدد الأصناف</th><th class="nos"></th></tr></thead>
+    <tbody>${list.length?list.slice(0,200).map(v=>`<tr><td class="mono">${h(v.no)}</td>
+      <td>${h(vTypeName(v.type))}</td><td class="mono">${h(v.reqNo||'')}</td><td>${fmtD(v.date)}</td>
+      <td class="mono">${v.lines.length}</td>
+      <td><button class="btn ghost sm" onclick="viewVoucher('${v.id}')">عرض وطباعة</button></td></tr>`).join('')
+      :`<tr><td colspan="6"><div class="empty"><b>لا توجد سندات</b>ستظهر هنا سندات الصرف والعهد والإرجاع.</div></td></tr>`}
+    </tbody></table>`;
 }
 function pgVouchers(){
   const t=F.vtype||'';
@@ -3744,7 +3798,8 @@ function pgCustody(){
     <div class="card-b" style="padding-top:10px"><div style="display:flex;gap:8px;flex-wrap:wrap">
       ${kitOut(ses.clubId).map(c=>`<span class="pill p-gray">${h(c.assetName)} — المتبقي ${custRemain(c)}</span>`).join('')}
     </div></div></div>`:'';
-  const body=tab==='club'?clubGroups(all)
+  const body=tab==='vou'?vouTable()
+    :tab==='club'?clubGroups(all)
     :tab==='cons'?`<table id="tblCu"><thead><tr><th>م</th><th>سند الخروج</th><th>رقم الطلب</th>
       ${ses.role!=='club'?'<th>النادي</th>':''}<th>المادة</th><th>الكمية</th><th>الوحدة</th><th>تاريخ الصرف</th>
       <th>المستلم</th></tr></thead><tbody>${consRows.join('')||
@@ -3771,7 +3826,8 @@ function pgCustody(){
     ${tabBtn('back','المسترجعة والمغلقة',back.length,'p-ok')}
     ${tabBtn('stuck','العالقة',stuck.length,'p-dan')}
     ${tabBtn('club','حسب النادي',S.clubs.filter(c=>all.some(x=>x.clubId===c.id)).length,'p-info')}
-    ${tabBtn('cons','عهد استهلاكية',consRows.length,'p-gold')}</div>
+    ${tabBtn('cons','عهد استهلاكية',consRows.length,'p-gold')}
+    ${ses.role==='club'?tabBtn('vou','السندات',scopedVou().length,'p-info'):''}</div>
   <div class="card"><div class="tw" style="max-height:62vh">${body}</div></div>`;
 }
 function bulkOk(c){return !c.kit&&!num(c.reqDmg)&&!num(c.dmgPending)&&c.status==='open'&&custRemain(c)>0}
@@ -4266,8 +4322,8 @@ function kitBtn(){
     <div class="card-h" style="background:#FDF2F1">
       <h3>${h(kitDef().name)}</h3>
       ${froz?'<span class="pill p-dan">مطلوبة سابقًا ولا تزال في العهدة</span>':'<span class="pill p-ok">متاحة للطلب</span>'}
-      <button class="btn ${froz?'ghost':'dan'} sm" style="margin-inline-start:auto" ${froz?'disabled':''}
-        onclick="${froz?'':'kitModal()'}">طلب حقيبة النادي الثابتة</button></div>
+      <button class="btn ${froz?'ghost':'dan'} kit-big" style="margin-inline-start:10px" ${froz?'disabled':''}
+        onclick="${froz?'':'kitModal()'}">&#127890; طلب حقيبة النادي الثابتة</button></div>
     ${froz?`<div class="card-b" style="padding-top:10px"><div class="note dan" style="margin:0">
       الأيقونة مجمّدة حتى تُرجَع الحقيبة. المتبقي عليكم:
       ${out.map(c=>h(c.assetName)+' ('+custRemain(c)+')').join(' · ')}
@@ -4277,17 +4333,28 @@ function kitBtn(){
 function kitOut(clubId){
   return S.custody.filter(c=>c.kit&&c.clubId===clubId&&c.status==='open'&&custRemain(c)>0);
 }
-function kitSources(l){
+function clubBibName(clubId){
+  const cn=String(clubName(clubId)||'').replace(/^نادي\s+/,'').replace(/\s+الثقافي$/,'').trim();
+  return 'شباحات '+cn;
+}
+function kitSources(l,clubId){
+  if(l.perClub){
+    const want=normName(clubBibName(clubId||(ses?ses.clubId:null)));
+    return S.assets.filter(a=>a.active!==false&&normName(a.name)===want);
+  }
   const names=(l.alts&&l.alts.length?l.alts:[l.name]).map(normName);
   return S.assets.filter(a=>a.active!==false&&names.includes(normName(a.name))).sort((a,b)=>b.qty-a.qty);
 }
-function kitStatus(){
+function kitStatus(clubId){
+  const cid=clubId||(ses?ses.clubId:null);
   return kitDef().lines.map(l=>{
-    const src=kitSources(l);
+    const src=kitSources(l,cid);
     const avail=src.reduce((a,x)=>a+num(x.qty),0);
     const first=src[0];
-    return {name:l.name,alts:l.alts||null,assetId:first?first.id:null,unit:first?first.unit:'حبة',
-      cat:first?first.cat:'أدوات رياضية',need:l.qty,avail,short:Math.max(0,l.qty-avail),
+    const need=l.perClub?(first?first.qty:0):l.qty;
+    return {name:l.perClub?(first?first.name:clubBibName(cid)):l.name,
+      alts:l.alts||null,perClub:!!l.perClub,assetId:first?first.id:null,unit:first?first.unit:'حبة',
+      cat:first?first.cat:'أدوات رياضية',need,avail,short:Math.max(0,need-avail),
       sources:src.map(a=>({id:a.id,name:a.name,qty:a.qty,unit:a.unit}))};
   });
 }
@@ -5488,7 +5555,75 @@ function topStock(t){
   const o=pool.find(x=>normName(x.name)===normName(t.name)&&x.active!==false);
   return o?{id:o.id,qty:o.qty,code:o.code,unit:o.unit}:null;
 }
+function ideaModal(){
+  if(ses.role!=='club'&&!can('manager'))return toast('المقترحات تُرسل من حساب النادي','dan');
+  modal(`<div class="modal"><div class="mh"><h3>&#128161; مقترحات للشراء للبرامج القادمة</h3>
+    <button onclick="closeModal()">&times;</button></div>
+  <div class="mb">
+    <div class="note dan"><b>هذه الأفكار والمقترحات يتم توريدها للمخزن وليس للنادي.</b>
+      تُدرس ضمن مشتريات البرامج القادمة ولا تُصرف عهدة لناديكم.</div>
+    <div class="field" style="margin-top:12px"><label>اسم البرنامج أو الفعالية</label>
+      <input id="id_prog" placeholder="مثال: مخيم الإجازة"></div>
+    <div class="field"><label>الأصناف المقترحة (سطر لكل صنف: الاسم | الكمية)</label>
+      <textarea id="id_items" style="min-height:120px" placeholder="كرات قدم | 10&#10;ميداليات | 50"></textarea></div>
+    <div class="field"><label>سبب المقترح والفائدة</label><textarea id="id_why" style="min-height:80px"></textarea></div>
+  </div>
+  <div class="mf"><button class="btn gold" onclick="sendIdea()">إرسال المقترح</button>
+  <button class="btn ghost" onclick="closeModal()">إلغاء</button></div></div>`);
+}
+function sendIdea(){
+  const prog=(document.getElementById('id_prog').value||'').trim();
+  const items=(document.getElementById('id_items').value||'').trim();
+  const why=(document.getElementById('id_why').value||'').trim();
+  if(!items)return toast('اكتب الأصناف المقترحة','dan');
+  const lines=items.split(/\n+/).map(x=>{
+    const p=x.split('|');return {name:(p[0]||'').trim(),qty:num(p[1])||1};
+  }).filter(x=>x.name);
+  S.ideas=S.ideas||[];
+  S.ideas.unshift({id:uid(),ts:nowISO(),clubId:orderClub()||ses.clubId,by:ses.fullName,prog,why,lines,status:'new'});
+  logIt('مقترح شراء','مقترح',prog||'—','',lines.length+' صنف');
+  notify('مقترح شراء للبرامج القادمة من '+clubName(orderClub()||ses.clubId)+(prog?' — '+prog:''),'manager');
+  notify('مقترح شراء جديد للتوريد للمخزن'+(prog?' — '+prog:''),'keeper');
+  save();closeModal();renderPage();
+  toast('أُرسل المقترح — يُورَّد للمخزن وليس للنادي','ok');
+}
+function ideasSheet(){
+  const list=(S.ideas||[]).filter(x=>ses.role!=='club'||x.clubId===ses.clubId);
+  return `<div class="note dan" style="margin-bottom:12px">
+    <b>هذه الأفكار والمقترحات يتم توريدها للمخزن وليس للنادي.</b></div>
+  <div class="card"><div class="tw"><table id="tblIdeas"><thead><tr><th>التاريخ</th><th>النادي</th>
+    <th>البرنامج</th><th>الأصناف المقترحة</th><th>السبب</th><th>مقدّم المقترح</th>
+    ${can('manager')?'<th class="nos"></th>':''}</tr></thead>
+    <tbody>${list.length?list.map(x=>`<tr><td>${fmtD(x.ts)}</td><td>${h(clubName(x.clubId))}</td>
+      <td>${h(x.prog||'—')}</td>
+      <td style="text-align:right">${x.lines.map(l=>h(l.name)+' ×'+l.qty).join(' · ')}</td>
+      <td>${h(x.why||'')}</td><td>${h(x.by)}</td>
+      ${can('manager')?`<td><button class="btn ghost sm" onclick="ideaToPurchase('${x.id}')">تحويل إلى طلب شراء</button></td>`:''}
+      </tr>`).join('')
+      :`<tr><td colspan="7"><div class="empty"><b>لا توجد مقترحات</b>
+        أرسل مقترحاتك للبرامج القادمة من زر «مقترحات للشراء».</div></td></tr>`}</tbody></table></div></div>`;
+}
+function ideaToPurchase(id){
+  if(!can('manager'))return toast('هذا الإجراء للإدارة','dan');
+  const x=(S.ideas||[]).find(i=>i.id===id); if(!x)return;
+  confirmBox('تحويل المقترح إلى طلب شراء',
+    'سيُنشأ طلب شراء بأصناف المقترح للتوريد إلى المخزن (وليس صرفًا للنادي).',()=>{
+    const lines=x.lines.map(l=>({id:uid(),refId:null,name:canonName(l.name),unit:'حبة',qty:num(l.qty),
+      notes:'مقترح للبرامج القادمة'+(x.prog?' — '+x.prog:''),cls:'',status:'pending',done:0}));
+    const r=newReqFor(x.clubId,'purchase',lines);
+    r.status='classify';r.forStore=true;r.note='توريد للمخزن — مقترح برامج';
+    x.status='converted';x.reqNo=r.no;
+    save();renderPage();toast('أُنشئ طلب الشراء '+r.no,'ok');
+  },'gold');
+}
 function pgTop(){
+  if(F.topTab==='ideas')return `<div class="toolbar">
+    <button class="btn ghost sm" onclick="F.topTab='';renderPage()">الأصناف الأكثر طلبًا</button>
+    <button class="btn gold sm" onclick="F.topTab='ideas';renderPage()">أفكار ومقترحات</button>
+    ${(ses.role==='club'||can('manager'))?`<button class="btn ok" onclick="ideaModal()">&#128161; مقترحات للشراء</button>`:''}
+    <button class="btn ghost" onclick="printTable('tblIdeas','أفكار ومقترحات الشراء')">&#128424; طباعة</button>
+    <button class="btn ghost" onclick="exportTable('tblIdeas','أفكار_ومقترحات')">&#128202; Excel</button></div>
+    ${ideasSheet()}`;
   const mine=F.topMine==='1';
   const list=topRequested(mine).slice(0,80);
   const onBehalf=(ses.role!=='club');
@@ -5506,6 +5641,9 @@ function pgTop(){
       <td><input type="number" min="1" id="tq_${i}" value="" placeholder="الكمية" style="width:100px"></td></tr>`;
   }).join('');
   return `<div class="toolbar">
+    <button class="btn gold sm" onclick="F.topTab='';renderPage()">الأصناف الأكثر طلبًا</button>
+    <button class="btn ghost sm" onclick="F.topTab='ideas';renderPage()">أفكار ومقترحات</button>
+    ${(ses.role==='club'||can('manager'))?`<button class="btn ok sm" onclick="ideaModal()">&#128161; مقترحات للشراء</button>`:''}
     <button class="btn ${!mine?'gold':'ghost'} sm" onclick="F.topMine='0';renderPage()">كل النوادي</button>
     ${ses.role==='club'?`<button class="btn ${mine?'gold':'ghost'} sm" onclick="F.topMine='1';renderPage()">طلبات ناديكم</button>`:''}
     ${onBehalf?`<select onchange="F.onBehalf=this.value;renderPage()" title="الطلب باسم نادٍ">
@@ -6373,7 +6511,7 @@ function packState(){
   return JSON.stringify(c);
 }
 const SYNC_COLS=['users','clubs','items','assets','reqs','vouchers','custody','damages','msgs',
-  'audits','moves','log','notes','logins','resets','locations','kits'];
+  'audits','moves','log','notes','logins','resets','locations','kits','ideas'];
 function tomb(kind,id){
   S.tomb=S.tomb||{};S.tomb[kind]=S.tomb[kind]||{};
   S.tomb[kind][id]=nowISO();
@@ -6528,6 +6666,26 @@ if(!S.clsMap)S.clsMap={};
 if(!S.quota)S.quota={};
 if(!S.noMerge)S.noMerge={};
 if(!S.tomb)S.tomb={};
+if(!S.ideas)S.ideas=[];
+(function clubBibs(){
+  S.imports=S.imports||{};
+  if(S.imports.clubBibs)return;
+  const list=[['طموح',12],['جدرات',16],['أفق',22],['سمو',32],['همم',33],['بناء',28]];
+  let n=0;
+  list.forEach(function(x){
+    const nm=x[0],q=x[1],name='شباحات '+nm;
+    if(S.assets.some(a=>normName(a.name)===normName(name)))return;
+    n++;
+    S.assets.push({id:uid(),code:'FA-B'+String(n).padStart(3,'0'),name:name,cat:'أدوات رياضية',
+      desc:'شباحات نادي '+nm,unit:'حبة',qty:q,cond:'جيدة',shelf:'',
+      barcode:'629'+Math.floor(Math.random()*900000000+100000000),pdate:today(),value:0,
+      notes:'شباحات خاصة بنادي '+nm,active:true});
+  });
+  if(S.kits&&S.kits[0]&&!S.kits[0].lines.some(l=>l.perClub))
+    S.kits[0].lines.push({name:'شباحات النادي',qty:1,perClub:true});
+  S.imports.clubBibs=nowISO();
+  save();
+})();
 (function purgeTombed(){
   let n=0;
   const cols={users:'users',clubs:'clubs',items:'items',assets:'assets'};
