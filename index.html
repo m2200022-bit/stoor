@@ -2686,12 +2686,13 @@ function setF(k,v){F[k]=v;renderPage()}
 const DONE_ST=['closed','cancelled','rejected','returned','returned_short'];
 function reqOpenCust(r){return S.custody.filter(c=>c.reqId===r.id&&c.status==='open'&&custRemain(c)>0)}
 function reqIssuedQty(r){return r.lines.reduce((a,l)=>a+num(l.done),0)}
-/* ورقة المتابعة: عهدة قائمة أو مصروف قابل للإرجاع */
+/* ورقة «بانتظار إرجاع العهدة»: كل طلب يحتاج أمر إرجاع من النادي */
+function reqCust(r){return S.custody.filter(c=>c.reqId===r.id)}
 function isRetReq(r){
   if(['cancelled','rejected'].includes(r.status))return false;
   if(r.status==='await_return')return true;
-  if(reqOpenCust(r).length)return true;
-  return reqIssuedQty(r)>0&&r.status!=='closed';
+  if(reqOpenCust(r).length)return true;                       /* عهدة قائمة لم تُرجَع */
+  return reqCust(r).some(c=>num(c.dmgPending)>0);             /* تالف أو مفقود بانتظار القرار */
 }
 /* الطلبات الواردة: قيد المعالجة ولم تُغلق ولم تنتقل لورقة الإرجاع */
 function isInbox(r){return !DONE_ST.includes(r.status)&&!isRetReq(r)}
@@ -2767,7 +2768,7 @@ function pgReqs(){
     <button class="btn ghost sm" onclick="printClubRequests(selectedReqs())">&#128424; طباعة المحدد</button></div>`:''}
   <div class="toolbar" style="margin-top:-4px">
     ${reqTabBtn('','الطلبات الواردة',nInbox,'p-info')}
-    ${reqTabBtn('ret','بانتظار إرجاع العهدة والمصروف',nRet,'p-dan')}
+    ${reqTabBtn('ret','بانتظار إرجاع العهدة',nRet,'p-dan')}
     ${reqTabBtn('done','المنتهية',nDone,'p-gray')}
     ${reqTabBtn('all','كل الطلبات',list.length,'p-gold')}
     ${ses.role!=='club'?reqTabBtn('club','حسب النادي',S.clubs.filter(c=>list.some(r=>r.clubId===c.id)).length,'p-ok'):''}
@@ -2791,43 +2792,54 @@ function retSheet(list){
   const rows=list.map(r=>{
     const cust=reqOpenCust(r), rem=cust.reduce((a,c)=>a+custRemain(c),0);
     const issued=reqIssuedQty(r);
+    const dmg=reqCust(r).reduce((a,c)=>a+num(c.dmgPending),0);
     const late=cust.filter(c=>c.dueAt&&c.dueAt<today()).length;
-    const kind=cust.length?'<span class="pill p-dan">عهدة قائمة</span>'
-      :'<span class="pill p-warn">مصروف قابل للإرجاع</span>';
-    const names=(cust.length?cust.map(c=>c.assetName+' ('+custRemain(c)+')')
-      :r.lines.filter(l=>num(l.done)>0).map(l=>l.name+' ('+l.done+')')).slice(0,4);
-    return `<tr class="${late?'red':''}">
-      <td class="mono">${h(r.no)}</td>
+    const asked=cust.filter(c=>c.returnReq).length;
+    const kit=cust.some(c=>c.kit);
+    const due=cust.map(c=>c.dueAt).filter(Boolean).sort()[0]||'';
+    const names=cust.length?cust.map(c=>c.assetName+' ('+custRemain(c)+')').slice(0,4)
+      :reqCust(r).filter(c=>num(c.dmgPending)>0).map(c=>c.assetName+' (تالف '+c.dmgPending+')').slice(0,4);
+    const state=asked?`<span class="pill p-gold">طلب إرجاع مقدّم (${asked})</span>`
+      :(cust.length?'<span class="pill p-dan">لم يُطلب الإرجاع بعد</span>'
+                   :'<span class="pill p-warn">تالف بانتظار القرار</span>');
+    return `<tr class="${late||dmg?'red':''}">
+      <td class="mono">${h(r.no)}${kit?'<div style="font-size:11px"><span class="pill p-dan">حقيبة دائمة</span></div>':''}</td>
       ${ses.role!=='club'?`<td>${h(clubName(r.clubId))}
         ${r.requesterName?`<div style="font-size:11.5px;color:var(--ink3)">الطالب: ${h(r.requesterName)}</div>`:''}</td>`:''}
-      <td>${kind}${late?`<div><span class="pill p-dan">${late} متأخرة</span></div>`:''}</td>
-      <td style="text-align:right">${h(names.join(' · '))}${(cust.length||r.lines.length)>4?' …':''}</td>
+      <td>${state}${late?`<div><span class="pill p-dan">${late} متأخرة عن الموعد</span></div>`:''}</td>
+      <td style="text-align:right">${h(names.join(' · '))}${names.length>=4?' …':''}</td>
       <td class="mono">${issued}</td>
-      <td class="mono" style="font-weight:800">${cust.length?rem:issued}</td>
+      <td class="mono" style="font-weight:800">${rem}</td>
+      <td class="mono ${dmg?'red-txt':''}">${dmg||'—'}</td>
       <td>${fmtD(r.dates.out||r.dates.created)}</td>
-      <td>${cust.length?(cust[0].dueAt?fmtD(cust[0].dueAt):'—'):'—'}</td>
-      <td>${pill(r.status)}</td>
+      <td>${due?fmtD(due):'—'}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn ghost sm" onclick="openReq('${r.id}')">تفاصيل</button>
-        ${ses.role==='club'&&cust.length?`<button class="btn dan sm" onclick="go('custody')">طلب الإرجاع</button>`:''}
-        ${can('manager','keeper')&&cust.length?`<button class="btn gold sm" onclick="F.club='${r.clubId}';go('custody')">فتح العهد</button>`:''}
+        ${ses.role==='club'&&cust.length?`<button class="btn dan sm" onclick="go('custody')">
+          ${asked?'متابعة طلب الإرجاع':'طلب إرجاع العهدة'}</button>`:''}
+        ${can('manager','keeper')&&cust.length?`<button class="btn gold sm" onclick="F.club='${r.clubId}';go('custody')">استلام الإرجاع</button>`:''}
+        ${can('manager','keeper')&&dmg?`<button class="btn dan sm" onclick="F.club='${r.clubId}';F.ctab='stuck';go('custody')">قرار التالف</button>`:''}
         ${ses.role==='admin'&&issued?`<button class="btn dan sm" onclick="reverseIssue('${r.id}')">إرجاع المصروف للمخزون</button>`:''}
       </td></tr>`;
   }).join('');
-  const totRem=list.reduce((a,r)=>{const c=reqOpenCust(r);return a+(c.length?c.reduce((x,y)=>x+custRemain(y),0):reqIssuedQty(r))},0);
+  const totRem=list.reduce((a,r)=>a+reqOpenCust(r).reduce((x,y)=>x+custRemain(y),0),0);
+  const totDmg=list.reduce((a,r)=>a+reqCust(r).reduce((x,c)=>x+num(c.dmgPending),0),0);
+  const notAsked=list.filter(r=>reqOpenCust(r).length&&!reqOpenCust(r).some(c=>c.returnReq)).length;
   return `<div class="note dan" style="margin-bottom:12px">
-    <b>&#128273; متابعة ما بعد الصرف.</b> هنا الطلبات التي لا تزال عليها عهد لم تُرجَع، والطلبات التي صُرفت
-    ويمكن إرجاع مصروفها إلى المخزون. الإجمالي المتبقي: <b>${totRem}</b> وحدة في <b>${list.length}</b> طلب.
-    ${ses.role==='admin'?'<br>«إرجاع المصروف للمخزون» يعيد الكميات ويُلغي العهد المرتبطة ويُسجَّل في التدقيق.':''}</div>
-  ${can('manager')&&list.length?`<div class="toolbar" style="margin-top:-4px">
-    <button class="btn gold sm" onclick="go('custody')">&#8630; صفحة العهد والاسترجاع الجماعي</button>
+    <b>&#128273; بانتظار إرجاع العهدة.</b> كل طلب لا تزال عليه عهدة تحتاج أمر إرجاع من النادي.
+    المتبقي على النوادي: <b>${totRem}</b> وحدة في <b>${list.length}</b> طلب
+    ${notAsked?` — منها <b>${notAsked}</b> لم يُقدَّم لها طلب إرجاع بعد`:''}
+    ${totDmg?` · تالف أو مفقود بانتظار القرار: <b>${totDmg}</b>`:''}.
+    ${ses.role==='club'?'<br>اضغط «طلب إرجاع العهدة» لتقديم أمر الإرجاع من صفحة العهد.':''}</div>
+  ${list.length?`<div class="toolbar" style="margin-top:-4px">
+    ${can('manager')?`<button class="btn gold sm" onclick="go('custody')">&#8630; صفحة العهد والاسترجاع الجماعي</button>`:''}
     <button class="btn ghost sm" onclick="printTable('tblRet','بانتظار إرجاع العهدة')">&#128424; طباعة</button>
-    <button class="btn ghost sm" onclick="exportTable('tblRet','بانتظار_الإرجاع')">&#128202; Excel</button></div>`:''}
+    <button class="btn ghost sm" onclick="exportTable('tblRet','بانتظار_إرجاع_العهدة')">&#128202; Excel</button></div>`:''}
   <div class="card"><div class="tw"><table id="tblRet"><thead><tr><th>رقم الطلب</th>
-    ${ses.role!=='club'?'<th>النادي</th>':''}<th>نوع المتابعة</th><th>الأصناف</th><th>المصروف</th>
-    <th>المتبقي</th><th>تاريخ الصرف</th><th>موعد الإرجاع</th><th>الحالة</th><th class="nos"></th></tr></thead>
-    <tbody>${rows||`<tr><td colspan="10"><div class="empty"><b>لا توجد عهد أو مصروفات معلّقة</b>
-      كل ما صُرف أُرجع أو أُغلق.</div></td></tr>`}</tbody></table></div></div>`;
+    ${ses.role!=='club'?'<th>النادي</th>':''}<th>حالة الإرجاع</th><th>الأصول</th><th>المصروف</th>
+    <th>المتبقي على النادي</th><th>تالف/مفقود</th><th>تاريخ الصرف</th><th>موعد الإرجاع</th><th class="nos"></th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="10"><div class="empty"><b>لا توجد عهد بانتظار الإرجاع</b>
+      كل العهد أُرجعت أو لم يُصرف شيء بعد.</div></td></tr>`}</tbody></table></div></div>`;
 }
 function reqClubGroups(list){
   const ids=[...new Set(list.map(r=>r.clubId))];
