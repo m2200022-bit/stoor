@@ -2,7 +2,9 @@
 <html lang="en" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0e2537">
+<meta name="mobile-web-app-capable" content="yes">
 <title>نظام إدارة مخزن النوادي الثقافية</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -390,11 +392,77 @@ input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 
 .top .who .uinfo{display:flex;flex-direction:column;align-items:flex-end;line-height:1.4}
 .top .who .uinfo b{color:var(--ink);font-size:13.5px}
 .top .who .uinfo small{color:var(--ink3);font-size:12px}
+
+/* ===================== ملاءمة الجوال ===================== */
 @media(max-width:760px){
-  .top h1{order:3;flex:1 0 100%;text-align:right;font-size:16px}
-  .top .tools{order:2;flex:1;justify-content:flex-start}
-  .top .who{order:1}
+  html{-webkit-text-size-adjust:100%}
+  .page{padding:12px 10px 90px}
+  .top{padding:8px 10px;gap:8px;position:sticky;top:0}
+  .top h1{order:3;flex:1 0 100%;text-align:right;font-size:15.5px;margin:2px 0 0}
+  .top .tools{order:2;flex:1;justify-content:flex-start;gap:6px}
+  .top .who{order:1;gap:6px}
+  .top .who .uinfo b{font-size:12.5px}
+  .top .who .uinfo small{font-size:11px}
+  .out-btn span{display:none}
+  .out-btn{padding:7px 10px}
+  .burger{font-size:22px;padding:4px 8px}
+  .side{width:84vw;max-width:310px}
+
+  /* البطاقات والجداول */
+  .card{border-radius:12px}
+  .card-h{padding:12px 13px;flex-wrap:wrap;gap:8px}
+  .card-h h3{font-size:14.5px}
+  .card-b{padding:13px}
+  .stats{grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:9px}
+  .stat b{font-size:22px}
+  .sec-title{font-size:14px;margin:16px 0 8px}
+
+  /* تمرير أفقي مريح للجداول مع تلميح */
+  .tw{-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+  .tw:after{content:"";display:block}
+  table{font-size:12.5px;min-width:560px}
+  th,td{padding:9px 8px;white-space:nowrap}
+  td>div{white-space:normal}
+
+  /* الأدوات والحقول */
+  .toolbar{gap:6px;margin-bottom:10px}
+  .toolbar>*{flex:1 1 auto;min-width:0}
+  .toolbar .grow{flex:1 1 100%}
+  .toolbar input,.toolbar select{min-width:0;width:100%}
+  .row{grid-template-columns:1fr;gap:10px}
+  .field label{font-size:12.5px}
+  input[type=text],input[type=password],input[type=number],input[type=date],input[type=tel],select,textarea{
+    font-size:16px;padding:11px 12px}   /* 16px يمنع تكبير الصفحة تلقائيًا في iOS */
+  .btn{padding:11px 14px;font-size:13.5px}
+  .btn.sm{padding:8px 11px;font-size:12.5px}
+  .ibtn{width:38px;height:38px}
+  .kit-big{font-size:14.5px;padding:11px 16px}
+
+  /* النوافذ المنبثقة ملء الشاشة */
+  .ov{padding:0;align-items:flex-end}
+  .modal,.modal.sm,.modal.lg{width:100%;max-width:100%;max-height:94vh;border-radius:16px 16px 0 0}
+  .mh{padding:13px;position:sticky;top:0;z-index:2;background:var(--surface)}
+  .mh h3{font-size:15px}
+  .mb{padding:13px}
+  .mf{padding:11px 13px;position:sticky;bottom:0;flex-wrap:wrap;gap:7px}
+  .mf .btn{flex:1 1 auto}
+
+  /* التنبيهات */
+  .toast{inset-inline:10px;width:auto;font-size:13.5px}
+  .note{font-size:13px;padding:11px 12px}
+  .kv{grid-template-columns:1fr}
+  .kv b{margin-top:6px}
 }
+@media(max-width:420px){
+  .stats{grid-template-columns:1fr 1fr;gap:8px}
+  .stat b{font-size:20px}
+  .top .who .uinfo{display:none}
+  table{font-size:12px;min-width:520px}
+}
+/* منع القص الأفقي في كل المقاسات */
+body,.shell,.page{max-width:100%;overflow-x:hidden}
+.tw{max-width:100%}
+
 .side{background:var(--side);color:var(--side-ink)}
 .side-head,.side-foot{border-color:rgba(255,255,255,.08)}
 .gline:hover,.sub a:hover,.sub2 a:hover,.gline.on,.sub a.on,.sub2 a.on{background:var(--side2)}
@@ -451,6 +519,10 @@ a,.gline,.sub a,.sub2 a,.pill,.ibtn{transition:color var(--t),background-color v
 .theme-btn{background:none;border:1px solid var(--line);border-radius:var(--r-sm);cursor:pointer;
   padding:6px 10px;color:var(--ink2);font-size:14px}
 .theme-btn:hover{background:var(--hover);color:var(--ink)}
+.out-btn{display:inline-flex;align-items:center;gap:6px;background:var(--dan-l);border:1px solid rgba(154,62,77,.35);
+  color:var(--dan);border-radius:var(--r-sm);cursor:pointer;padding:7px 12px;font-size:13.5px;font-weight:800;
+  font-family:inherit;transition:all var(--t)}
+.out-btn:hover{background:var(--dan);color:#fff;transform:translateY(-1px)}
 
 </style>
 </head>
@@ -468,9 +540,9 @@ const ST={
   bought:'تم الشراء بالكامل', bought_part:'تم الشراء جزئيًا', not_bought:'لم يتم الشراء',
   received:'تم التوريد إلى المخزن', ready:'جاهز للصرف', to_keeper:'تم الإرسال للصرف', issued_part:'تم الصرف جزئيًا',
   issued:'تم الصرف بالكامل', await_return:'بانتظار إرجاع العهدة', returned:'تمت إعادة العهدة بالكامل',
-  returned_short:'تمت إعادة العهدة بنواقص', closed:'مغلق'
+  returned_short:'تمت إعادة العهدة بنواقص', closed:'مغلق', cancelled:'ملغي من النادي'
 };
-const STCLR={draft:'p-gray',new:'p-info',review:'p-warn',classify:'p-warn',approved:'p-ok',rejected:'p-dan',
+const STCLR={draft:'p-gray',new:'p-info',review:'p-warn',classify:'p-warn',approved:'p-ok',rejected:'p-dan',cancelled:'p-gray',
   keeper:'p-info',buying:'p-warn',bought:'p-ok',bought_part:'p-warn',not_bought:'p-dan',received:'p-ok',to_keeper:'p-gold',
   ready:'p-gold',issued_part:'p-warn',issued:'p-ok',await_return:'p-warn',returned:'p-ok',returned_short:'p-warn',closed:'p-gray'};
 
@@ -516,6 +588,11 @@ function nextNo(pfx){
 }
 
 function save(){
+  if(typeof isReadOnly==='function'&&isReadOnly()){
+    try{const back=load(); if(back){S=back}}catch(e){}
+    try{toast('وضع القراءة فقط — لا يمكن التعديل قبل توثيق الدخول في السحابة','dan')}catch(e){}
+    return;
+  }
   try{ if(typeof schedulePush==='function')schedulePush(); }catch(e){}
   try{ localStorage.setItem(KEY,JSON.stringify(S)); }
   catch(e){ toast('تعذّر حفظ البيانات: مساحة المتصفح ممتلئة. صدّر نسخة احتياطية ثم احذف بيانات قديمة.','dan'); }
@@ -712,7 +789,7 @@ function seed(){
     settings:{orgName:'إدارة النوادي الثقافية',warehouse:'المخزن المركزي',dueDays:14,support:'تحويلة 1234',
       appName:'نظام إدارة مخزن النوادي الثقافية',logo:'',whatsapp:'55486292',
       fb:{enabled:true,apiKey:'AIzaSyAYn7DzTC03I7Q_My7xuJD33ELQwwuhe84',projectId:'droub-55931',
-          doc:'warehouse/state',poll:15,auth:false,domain:'droub.local'}}
+          doc:'warehouse/state',poll:15,auth:true,requireAuth:true,domain:'droub.local'}}
   };
 }
 
@@ -948,6 +1025,14 @@ function doLogin(){
   const rem=document.getElementById('lgrem');
   try{ if(rem&&rem.checked)localStorage.setItem('wh_remember',u); else localStorage.removeItem('wh_remember'); }catch(e){}
   ses=usr; route='dash'; logIt('تسجيل دخول','مستخدم',usr.username); runAlerts(); draftLoad(); save(); render();
+  if(fbOn()&&fbCfg().auth){
+    AU.tried=false;
+    fbSignIn(usr.username,usr.pass).then(ok=>{
+      AU.tried=true;
+      if(!ok&&AU.err)toast('تعذّر توثيق الحساب في السحابة: '+AU.err,'dan');
+      render();startSync();
+    });
+  } else startSync();
   startSync();
 }
 function doRegister(){
@@ -1000,13 +1085,16 @@ function saveMyPass(){
   if(n.length<6)return toast('كلمة المرور الجديدة 6 أحرف على الأقل','dan');
   if(n!==n2)return toast('تأكيد كلمة المرور غير مطابق','dan');
   ses.pass=n;logIt('تغيير كلمة المرور','مستخدم',ses.username,'','تم');
+  if(fbOn()&&fbCfg().auth)fbUpdatePassword(n).then(ok=>{
+    if(!ok&&AU.err)toast('لم تُحدَّث كلمة المرور في السحابة: '+AU.err,'dan')});
   fbUpdatePassword(n).then(ok=>{if(!ok&&fbCfg().auth&&AU.err)toast('لم تُحدَّث كلمة المرور في السحابة: '+AU.err,'dan')});
   save();closeModal();toast('حُدّثت كلمة المرور','ok');
 }
 function logout(){
   if(isActing())return backToSelf();
   confirmBox('تسجيل الخروج','هل تريد الخروج من النظام؟',()=>{
-    AU={idToken:'',refresh:'',exp:0,email:'',err:''};clearInterval(SY.timer);REALME=null;
+    AU={idToken:'',refresh:'',exp:0,email:'',err:'',uid:'',tried:false,bypass:false};
+    clearInterval(SY.timer);REALME=null;
     logIt('تسجيل خروج','مستخدم',ses.username);save();ses=null;authTab='login';renderAuth();
   },'dan');
 }
@@ -1054,8 +1142,8 @@ function navCount(kind){
   if(kind==='msgs')return unreadMsgs();
   if(kind==='reqs'){
     const rs=scopedReqs();
-    if(ses.role==='club')return rs.filter(r=>!['closed','rejected'].includes(r.status)).length;
-    return rs.filter(r=>!['closed','rejected','returned','returned_short'].includes(r.status)).length;
+    if(ses.role==='club')return rs.filter(r=>!['closed','rejected','cancelled'].includes(r.status)).length;
+    return rs.filter(r=>!['closed','rejected','returned','returned_short','cancelled'].includes(r.status)).length;
   }
   if(kind==='users')return S.users.filter(u=>u.status==='pending').length;
   if(kind==='custody'){
@@ -1285,6 +1373,7 @@ function render(){
             <small>${h(ROLES[ses.role])}${ses.clubId?' · '+h(clubName(ses.clubId)):''}</small></div>
           <button class="avatar" style="border:0;cursor:pointer" title="تغيير كلمة المرور"
             onclick="myPassModal()">${h(ses.fullName.trim()[0]||'؟')}</button>
+          <button class="out-btn" title="تسجيل الخروج" onclick="logout()">&#9099;<span>خروج</span></button>
         </div>
       </header>
       ${isActing()?`<div style="background:var(--dan);color:#fff;padding:7px 18px;font-size:13.5px;
@@ -1313,7 +1402,7 @@ function renderPage(){
     reports:pgReports,quota:pgQuota,trail:pgTrail,newcons:pgNewCons,newasset:pgNewAsset,guide:pgGuide,
     clubmsgs:pgClubMsgs,top:pgTop,
     msgs:pgMsgs,users:pgUsers,settings:pgSettings};
-  p.innerHTML=(map[route]||pgDash)();
+  p.innerHTML=roBanner()+(map[route]||pgDash)();
   p.classList.remove('fade-up');void p.offsetWidth;p.classList.add('fade-up');
   arabize(p);
 }
@@ -1650,13 +1739,22 @@ function sendAllDrafts(){
 function pgCons(){return consManageView()}
 function behalfBar(){
   if(ses.role==='club')return '';
-  return `<div class="note" style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-    <b>تقديم الطلب باسم نادٍ:</b>
-    <select onchange="F.onBehalf=this.value;renderPage()" style="width:auto;min-width:220px">
-      <option value="">— اختر النادي —</option>
-      ${S.clubs.map(c=>`<option value="${c.id}" ${F.onBehalf===c.id?'selected':''}>${h(c.name)}</option>`).join('')}</select>
-    ${F.onBehalf?`<span class="pill p-ok">سيُسجَّل الطلب باسم ${h(clubName(F.onBehalf))} وبِاسمك كمُقدِّم</span>`
-      :'<span class="pill p-dan">اختر ناديًا قبل الإرسال</span>'}</div>`;
+  const names=[...new Set(S.users.filter(u=>u.clubId&&(!F.onBehalf||u.clubId===F.onBehalf)).map(u=>u.fullName))];
+  return `<div class="note" style="margin-bottom:14px">
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="margin:0;min-width:220px"><label>تقديم الطلب باسم نادٍ</label>
+        <select onchange="F.onBehalf=this.value;renderPage()">
+          <option value="">— اختر النادي —</option>
+          ${S.clubs.map(c=>`<option value="${c.id}" ${F.onBehalf===c.id?'selected':''}>${h(c.name)}</option>`).join('')}</select></div>
+      <div class="field" style="margin:0;min-width:220px"><label>اسم الطالب (صاحب الطلب)</label>
+        <input id="bh_name" list="bhnames" value="${h(F.onBehalfName||'')}" placeholder="اكتب اسم من طلب المواد"
+          oninput="F.onBehalfName=this.value">
+        <datalist id="bhnames">${names.map(n=>`<option value="${h(n)}">`).join('')}</datalist></div>
+    </div>
+    <div style="margin-top:8px">
+      ${F.onBehalf?`<span class="pill p-ok">سيُسجَّل الطلب باسم ${h(clubName(F.onBehalf))}
+        ${F.onBehalfName?' — الطالب: '+h(F.onBehalfName):''} وبِاسمك كمُنفِّذ</span>`
+        :'<span class="pill p-dan">اختر ناديًا قبل الإرسال</span>'}</div></div>`;
 }
 function orderClub(){return ses.role==='club'?ses.clubId:F.onBehalf}
 function pgNewCons(){
@@ -1748,7 +1846,9 @@ function newReq(kind,lines){
     hist:[{ts:nowISO(),by:ses.fullName,txt:'أنشأ الطلب'}]};
   if(ses.role!=='club'){
     r.onBehalfBy=ses.fullName;
-    hist(r,'قُدّم الطلب باسم '+clubName(r.clubId)+' بواسطة '+ses.fullName);
+    if(F.onBehalfName)r.requesterName=String(F.onBehalfName).trim();
+    hist(r,'قُدّم الطلب باسم '+clubName(r.clubId)+
+      (r.requesterName?' — الطالب: '+r.requesterName:'')+' بواسطة '+ses.fullName);
   }
   if(kind==='purchase'){const n=autoClassify(r);if(n)r.autoClassified=n}
   if(late)hist(r,'قُدّم الطلب خارج موعد الطلبات الأسبوعي');
@@ -2583,7 +2683,7 @@ function withWindow(title,onOk,kind){
 let F={q:'',club:'',kind:'',status:'',from:'',to:''};
 function setF(k,v){F[k]=v;renderPage()}
 function reqFiltered(){
-  const pri=r=>r.status==='await_return'?0:(['closed','rejected','returned','returned_short'].includes(r.status)?2:1);
+  const pri=r=>r.status==='await_return'?0:(['closed','rejected','returned','returned_short','cancelled'].includes(r.status)?2:1);
   return scopedReqs().slice().sort((a,b)=>pri(a)-pri(b)||
     String((b.dates||{}).created||'').localeCompare(String((a.dates||{}).created||''))).filter(r=>{
     if(F.club&&r.clubId!==F.club)return false;
@@ -2601,7 +2701,7 @@ function pgReqs(){
   const ls=S.lastSent&&S.lastSent.by===ses.id&&(Date.now()-new Date(S.lastSent.ts).getTime()<36e5)?S.lastSent:null;
   const clubOpts=S.clubs.map(c=>`<option value="${c.id}" ${F.club===c.id?'selected':''}>${h(c.name)}</option>`).join('');
   const stOpts=Object.keys(ST).map(k=>`<option value="${k}" ${F.status===k?'selected':''}>${ST[k]}</option>`).join('');
-  const bulk=can('manager','keeper');
+  const bulk=can('manager','keeper')||ses.role==='admin';
   const rows=list.map(r=>{
     const acts=reqActions(r).slice(0,1).map(a=>`<button class="btn ${a.cls||'ghost'} sm" onclick="${a.fn}">${a.t}</button>`).join('');
     const kitShort=r.kit&&r.kitShort&&r.kitShort.length;
@@ -2611,7 +2711,8 @@ function pgReqs(){
       ${kitShort?' <span class="pill p-warn">ناقصة</span>':''}</div>`:''}
       ${r.late?'<div><span class="pill p-warn">خارج موعد الطلبات</span></div>':''}
       ${r.dup?'<div><span class="pill p-dan">عهدة قائمة بنفس المسمى</span></div>':''}</td>
-    ${ses.role!=='club'?`<td>${h(clubName(r.clubId))}</td>`:''}
+    ${ses.role!=='club'?`<td>${h(clubName(r.clubId))}
+      ${r.requesterName?`<div style="font-size:11.5px;color:var(--ink3)">الطالب: ${h(r.requesterName)}</div>`:''}</td>`:''}
     <td class="mono">${r.lines.length}</td><td>${fmtD(r.dates.created)}</td><td>${pill(r.status)}</td>
     <td style="display:flex;gap:6px"><button class="btn ghost sm" onclick="openReq('${r.id}')">تفاصيل</button>${acts}</td></tr>`;
   }).join('');
@@ -2638,6 +2739,8 @@ function pgReqs(){
     <button class="btn ok sm" onclick="bulkApprove()">اعتماد</button>
     <button class="btn dan sm" onclick="bulkReject()">رفض</button>
     <button class="btn ghost sm" onclick="bulkClose()">إغلاق</button>
+    ${ses.role==='admin'?`<button class="btn dan sm" onclick="bulkCancelReqs()">إلغاء المحدد</button>
+    <button class="btn dan sm" onclick="bulkDelReqs()">&#128465; حذف المحدد</button>`:''}
     <button class="btn ghost sm" onclick="printClubRequests(selectedReqs())">&#128424; طباعة المحدد</button></div>`:''}
   ${ses.role!=='club'?`<div class="toolbar" style="margin-top:-4px">
     <button class="btn ${F.rtab!=='club'?'gold':'ghost'} sm" onclick="F.rtab='';renderPage()">كل الطلبات</button>
@@ -2680,10 +2783,32 @@ function railFor(r){
     const cls=s[1]?'done':(i===firstOpen?'now':'');
     return `<div class="${cls}"><i>${s[1]?'✓':i+1}</i>${s[0]}</div>`}).join('')}</div>`;
 }
+const CANCELABLE=['new','review','classify','approved','keeper','buying'];
+function canCancel(r){
+  if(!ses||ses.role!=='club')return false;
+  if(r.clubId!==ses.clubId)return false;
+  if(r.lines.some(l=>num(l.done)>0))return false;      /* صُرف شيء منه */
+  return CANCELABLE.includes(r.status);
+}
 function reqActions(r){
   const unCls=r.kind==='purchase'&&r.lines.some(l=>!l.cls);
   const a=[];
-  if(r.status==='rejected'||r.status==='closed')return a;
+  if(r.status==='cancelled'){
+    if(ses.role==='admin')a.push({t:'حذف الطلب',fn:`delReq('${r.id}')`,cls:'dan'});
+    return a;
+  }
+  if(canCancel(r))a.push({t:'إلغاء الطلب',fn:`cancelReq('${r.id}')`,cls:'dan'});
+  if(r.status==='rejected'||r.status==='closed'){
+    if(ses.role==='admin'){
+      a.push({t:'إلغاء الطلب',fn:`cancelReq('${r.id}')`,cls:'dan'});
+      a.push({t:'حذف الطلب',fn:`delReq('${r.id}')`,cls:'dan'});
+    }
+    return a;
+  }
+  if(ses.role==='admin'){
+    a.push({t:'إلغاء الطلب',fn:`cancelReq('${r.id}')`,cls:'dan'});
+    a.push({t:'حذف الطلب',fn:`delReq('${r.id}')`,cls:'dan'});
+  }
   /* التصنيف والاعتماد والشراء والتوريد: مدير المخزن أو أمين المخزن أو مشرف النوادي */
   if(can('manager','keeper')&&['review','classify','new'].includes(r.status)){
     if(ses.role==='admin'&&!unCls)a.push({t:'اعتماد وصرف مباشر',fn:`approveIssueNow('${r.id}')`,cls:'ok'});
@@ -2780,7 +2905,8 @@ function openReq(id){
       <b>${r.kitShort.map(x=>h(x.name)+' ('+x.qty+')').join(' · ')}</b></div>`:''}
     <div class="kv" style="margin:12px 0 16px">
       <b>النادي</b><span>${h(clubName(r.clubId))}</span>
-      <b>مقدم الطلب</b><span>${h(userName(r.userId))}${r.onBehalfBy?' — قُدّم باسم النادي بواسطة '+h(r.onBehalfBy):''}</span>
+      <b>مقدم الطلب</b><span>${h(r.requesterName||userName(r.userId))}${r.onBehalfBy?
+        ' — سُجّل باسم النادي بواسطة '+h(r.onBehalfBy):''}</span>
       <b>الحالة</b><span>${pill(r.status)}</span>
       <b>تاريخ الإنشاء</b><span>${fmtDT(r.dates.created)}${r.late?' <span class="pill p-warn">خارج موعد الطلبات</span>':''}</span>
       ${r.dates.approved?`<b>تاريخ الاعتماد</b><span>${fmtDT(r.dates.approved)} — ${h(r.approvedBy||'')}</span>`:''}
@@ -3117,6 +3243,48 @@ function doBulkReject(){
   });
   save();closeModal();renderPage();toast('رُفض '+sel.length+' طلب','ok');
 }
+function bulkCancelReqs(){
+  if(ses.role!=='admin')return toast('هذا الإجراء لمدير النظام','dan');
+  const sel=selectedReqs(); if(!sel.length)return toast('حدّد طلبًا واحدًا على الأقل','dan');
+  const list=sel.filter(r=>r.status!=='cancelled');
+  if(!list.length)return toast('الطلبات المحددة ملغاة أصلًا','dan');
+  confirmBox('إلغاء '+list.length+' طلب',
+    `<div class="note dan">سيُلغى ${list.length} طلبًا وتُعاد أي كميات مصروفة منها إلى المخزون:<br>
+      <b>${h(list.map(r=>r.no).join(' · '))}</b></div>`,()=>{
+    let back=0;
+    list.forEach(r=>{
+      r.lines.forEach(l=>{
+        const q=num(l.done); if(!q)return;
+        const cls=l.cls||(r.kind==='asset'?'asset':'consumable');
+        const t=cls==='asset'?assetById(l.refId):itemById(l.refId);
+        if(t){const before=t.qty;t.qty+=q;
+          addMove('إرجاع بإلغاء الطلب',cls==='asset'?'أصل ثابت':'مادة استهلاكية',t.name,q,before,t.qty,
+            'إلغاء جماعي',r.no,r.clubId)}
+        l.done=0;l.status='cancelled';back+=q;
+      });
+      S.custody.filter(c=>c.reqId===r.id&&c.status==='open').forEach(c=>{
+        c.status='returned';c.retQty=c.qty;c.dmgPending=0;c.returnReq=false});
+      S.vouchers.filter(v=>v.reqId===r.id&&!v.cancelled).forEach(v=>{v.cancelled=true;v.cancelReason='إلغاء الطلب '+r.no});
+      r.status='cancelled';r.cancelledAt=nowISO();r.cancelledBy=ses.fullName;
+      hist(r,'أُلغي ضمن إلغاء جماعي بواسطة '+ses.fullName);
+      logIt('إلغاء طلب','طلب',r.no,'','ملغي','إلغاء جماعي');
+      notify('أُلغي طلبكم '+r.no,'club',r.clubId);
+    });
+    runAlerts();save();renderPage();
+    toast('أُلغي '+list.length+' طلبًا'+(back?' وأُعيد '+back+' وحدة للمخزون':''),'ok');
+  },'dan');
+}
+function bulkDelReqs(){
+  if(ses.role!=='admin')return toast('حذف الطلبات من صلاحية مدير النظام','dan');
+  const list=selectedReqs(); if(!list.length)return toast('حدّد طلبًا واحدًا على الأقل','dan');
+  const issued=list.reduce((a,r)=>a+r.lines.reduce((x,l)=>x+num(l.done),0),0);
+  confirmBox('حذف '+list.length+' طلب',
+    `<div class="note dan">سيُحذف ${list.length} طلبًا نهائيًا:<br><b>${h(list.map(r=>r.no).join(' · '))}</b>
+      ${issued?`<br>سيُعاد ${issued} وحدة مصروفة إلى المخزون.`:''}</div>`,()=>{
+    list.forEach(r=>delReqCore(r,'حذف جماعي بواسطة '+ses.fullName));
+    save();renderPage();toast('حُذف '+list.length+' طلبًا','ok');
+  },'dan');
+}
 function bulkClose(){
   if(!can('manager','keeper'))return toast('صلاحية غير كافية','dan');
   const sel=selectedReqs().filter(r=>['issued','not_bought','returned','returned_short'].includes(r.status));
@@ -3179,6 +3347,81 @@ function doReject(id){
   if(late){notify('رُفض الطلب '+r.no+' بعد الشراء — '+rs,'keeper');notify('رُفض الطلب '+r.no+' بعد الشراء — '+rs,'manager');}
   notify('رُفض طلبكم '+r.no+' — '+rs,'club',r.clubId);
   save();closeModal();renderPage();toast('سُجّل الرفض','ok');
+}
+function cancelReq(id){
+  const r=S.reqs.find(x=>x.id===id); if(!r)return;
+  const isClub=ses.role==='club';
+  if(isClub&&!canCancel(r))return toast('لا يمكن إلغاء الطلب بعد بدء صرفه — راجع الإدارة','dan');
+  if(!isClub&&ses.role!=='admin')return toast('الإلغاء من صلاحية النادي صاحب الطلب أو مدير النظام','dan');
+  const issued=r.lines.reduce((a,l)=>a+num(l.done),0);
+  const cust=S.custody.filter(c=>c.reqId===r.id&&c.status==='open'&&custRemain(c)>0).length;
+  modal(`<div class="modal sm"><div class="mh"><h3>إلغاء الطلب ${h(r.no)}</h3>
+    <button onclick="closeModal()">&times;</button></div>
+  <div class="mb">
+    ${issued?`<div class="note dan"><b>تنبيه:</b> صُرف من هذا الطلب ${issued} وحدة.
+      الإلغاء سيعيدها إلى المخزون${cust?` ويلغي ${cust} عهدة قائمة`:''}.</div>`
+      :`<div class="note">سيُلغى الطلب ولن يُنفَّذ. تبقى بياناته في السجل.</div>`}
+    <div class="field" style="margin-top:12px"><label>سبب الإلغاء</label>
+      <input id="cn_r" placeholder="${isClub?'اختياري':'اختياري'}"></div>
+  </div>
+  <div class="mf"><button class="btn dan" onclick="doCancelReq('${id}')">تأكيد الإلغاء</button>
+  <button class="btn ghost" onclick="closeModal()">تراجع</button></div></div>`);
+}
+function doCancelReq(id){
+  const r=S.reqs.find(x=>x.id===id); if(!r)return;
+  const rs=(document.getElementById('cn_r')||{}).value||'';
+  let back=0;
+  r.lines.forEach(l=>{
+    const q=num(l.done); if(!q)return;
+    const cls=l.cls||(r.kind==='asset'?'asset':'consumable');
+    const t=cls==='asset'?assetById(l.refId):itemById(l.refId);
+    if(t){const before=t.qty;t.qty+=q;
+      addMove('إرجاع بإلغاء الطلب',cls==='asset'?'أصل ثابت':'مادة استهلاكية',t.name,q,before,t.qty,
+        'إلغاء الطلب '+r.no,r.no,r.clubId)}
+    l.done=0;l.status='cancelled';back+=q;
+  });
+  S.custody.filter(c=>c.reqId===r.id&&c.status==='open').forEach(c=>{
+    c.status='returned';c.retQty=c.qty;c.dmgPending=0;c.returnReq=false;
+    c.notes=(c.notes||'')+' — أُلغيت بإلغاء الطلب';
+  });
+  S.vouchers.filter(v=>v.reqId===r.id&&!v.cancelled).forEach(v=>{
+    v.cancelled=true;v.cancelReason='إلغاء الطلب '+r.no+(rs?' — '+rs:'');
+  });
+  r.status='cancelled';r.cancelledAt=nowISO();r.cancelledBy=ses.fullName;r.cancelReason=rs;
+  hist(r,'أُلغي الطلب بواسطة '+ses.fullName+(rs?' — '+rs:'')+(back?' (أُعيد '+back+' وحدة للمخزون)':''));
+  logIt('إلغاء طلب','طلب',r.no,'','ملغي',rs);
+  notify('أُلغي الطلب '+r.no+' من '+clubName(r.clubId)+(rs?' — '+rs:''),'keeper');
+  notify('أُلغي الطلب '+r.no+(rs?' — '+rs:''),'manager');
+  if(ses.role!=='club')notify('أُلغي طلبكم '+r.no+(rs?' — '+rs:''),'club',r.clubId);
+  runAlerts();save();closeModal();renderPage();
+  toast('أُلغي الطلب'+(back?' وأُعيد '+back+' وحدة للمخزون':''),'ok');
+}
+function delReq(id){
+  if(ses.role!=='admin')return toast('حذف الطلبات من صلاحية مدير النظام','dan');
+  const r=S.reqs.find(x=>x.id===id); if(!r)return;
+  const issued=r.lines.reduce((a,l)=>a+num(l.done),0);
+  const vs=S.vouchers.filter(v=>v.reqId===r.id).length;
+  confirmBox('حذف الطلب '+r.no,
+    `<div class="note dan">سيُحذف الطلب نهائيًا من النظام.
+      ${issued?`<br>صُرف منه ${issued} وحدة وستُعاد إلى المخزون.`:''}
+      ${vs?`<br>سيُلغى ${vs} سند مرتبط به ويبقى في السجل.`:''}</div>`,()=>{
+    delReqCore(r,'حذف بواسطة '+ses.fullName);
+    save();closeModal();renderPage();toast('حُذف الطلب '+r.no,'ok');
+  },'dan');
+}
+function delReqCore(r,why){
+  r.lines.forEach(l=>{
+    const q=num(l.done); if(!q)return;
+    const cls=l.cls||(r.kind==='asset'?'asset':'consumable');
+    const t=cls==='asset'?assetById(l.refId):itemById(l.refId);
+    if(t){const before=t.qty;t.qty+=q;
+      addMove('إرجاع بحذف الطلب',cls==='asset'?'أصل ثابت':'مادة استهلاكية',t.name,q,before,t.qty,why,r.no,r.clubId)}
+  });
+  S.custody=S.custody.filter(c=>c.reqId!==r.id);
+  S.vouchers.filter(v=>v.reqId===r.id).forEach(v=>{v.cancelled=true;v.cancelReason=why});
+  logIt('حذف طلب','طلب',r.no,ST[r.status]||'','محذوف',why);
+  tomb('reqs',r.id);
+  S.reqs=S.reqs.filter(x=>x.id!==r.id);
 }
 function closeReq(id){
   if(!can('manager','keeper'))return toast('هذا الإجراء من صلاحية مدير المخزن أو أمين المخزن أو مشرف النوادي','dan');
@@ -4868,12 +5111,30 @@ function pgSettings(){
         <div class="field"><label>مفتاح الويب (apiKey)</label><input id="fb_key" value="${h(fbCfg().apiKey||'')}"></div>
         <div class="field"><label>مسار المستند</label><input id="fb_doc" value="${h(fbCfg().doc||'warehouse/state')}"></div>
         <div class="field"><label>فترة التحديث (ثانية)</label><input id="fb_poll" type="number" min="5" value="${num(fbCfg().poll)||15}"></div>
+        <div class="field"><label>مصادقة الحسابات (Firebase Auth)</label>
+          <select id="fb_auth"><option value="1" ${fbCfg().auth?'selected':''}>مفعّلة (موصى بها)</option>
+            <option value="0" ${!fbCfg().auth?'selected':''}>متوقفة</option></select></div>
+        <div class="field"><label>منع التعديل بلا توثيق</label>
+          <select id="fb_req"><option value="1" ${fbCfg().requireAuth?'selected':''}>نعم — قراءة فقط بلا توثيق</option>
+            <option value="0" ${!fbCfg().requireAuth?'selected':''}>لا</option></select></div>
+        <div class="field"><label>نطاق حسابات السحابة</label>
+          <input id="fb_dom" value="${h(fbCfg().domain||'droub.local')}"></div>
       </div>
+      <div class="note ${authed()?'info':'dan'}" style="margin-bottom:12px">
+        حالة التوثيق: <b>${fbCfg().auth?(authed()?'موثّق باسم '+h(AU.email):'غير موثّق'):'المصادقة متوقفة'}</b>
+        ${AU.uid?`<br>معرّف حسابك (UID): <span class="mono noar" style="direction:ltr">${h(AU.uid)}</span>
+          <button class="btn ghost sm" style="margin-inline-start:8px" onclick="copyUid()">نسخ</button>`:''}
+        ${AU.err?`<br><span class="red-txt">${h(AU.err)}</span>`:''}
+        <br>يُنشئ النظام لكل مستخدم حساب سحابة باسم <b>اسم_المستخدم@${h(fbCfg().domain||'droub.local')}</b>
+        بنفس كلمة مروره، فتُقبل الكتابة بقاعدة <b class="noar" style="direction:ltr">request.auth != null</b>.
+        يلزم تفعيل موفّر «البريد وكلمة المرور» في Firebase ← Authentication ← Sign-in method.</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn gold" onclick="saveFb()">حفظ إعدادات المزامنة</button>
         <button class="btn ghost" onclick="syncNow()">مزامنة الآن</button>
         <button class="btn ghost" onclick="cloudPull().then(g=>toast(g?'حُدّثت البيانات من السحابة':'لا يوجد أحدث من نسختك','ok'))">تنزيل من السحابة</button>
         <button class="btn ghost" onclick="cloudPush(true).then(o=>toast(o?'رُفعت البيانات':'تعذّر الرفع: '+SY.err,o?'ok':'dan'))">رفع إلى السحابة</button>
+        <button class="btn ghost" onclick="retryAuth()">&#128274; اختبار المصادقة</button>
+        <button class="btn ghost" onclick="rulesModal()">&#128220; قواعد الحماية المقترحة</button>
       </div>
       <div class="note info" style="margin-top:12px">تُحفظ البيانات في مستند واحد داخل Firestore وتتزامن كل
         ${num(fbCfg().poll)||15} ثانية بين جميع الأجهزة. آخر مزامنة: <b>${SY.last?fmtDT(SY.last):'—'}</b>
@@ -5128,11 +5389,56 @@ async function testAuth(){
   renderPage();
   toast(ok?('تمت المصادقة باسم '+AU.email):('فشلت المصادقة: '+AU.err),ok?'ok':'dan');
 }
+function copyUid(){
+  try{navigator.clipboard.writeText(AU.uid||'');toast('نُسخ المعرّف','ok')}
+  catch(e){toast('انسخه يدويًا: '+AU.uid,'dan')}
+}
+function rulesModal(){
+  const uids=[...new Set(S.users.filter(u=>u.status==='approved').map(u=>u.username))];
+  const rules=`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // مستند حالة نظام المخزن — لا يقرؤه ولا يكتبه إلا مستخدم موثّق
+    match /${(fbCfg().doc||'warehouse/state')} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}`;
+  modal(`<div class="modal lg"><div class="mh"><h3>قواعد الحماية المقترحة لـ Firestore</h3>
+    <button onclick="closeModal()">&times;</button></div>
+  <div class="mb">
+    <div class="note dan"><b>مهم:</b> ما دامت القاعدة <span class="noar" style="direction:ltr">if true</span>
+      فإن أي شخص يملك الرابط يستطيع قراءة بياناتكم والكتابة فوقها. انسخ القواعد أدناه وانشرها من
+      Firebase Console ← Firestore Database ← Rules ← Publish.</div>
+    <div class="field" style="margin-top:12px"><label>القواعد (انسخها كما هي)</label>
+      <textarea id="rl_txt" class="noar" style="min-height:220px;direction:ltr;text-align:left;font-family:monospace">${h(rules)}</textarea></div>
+    <div class="note info">خطوات الحماية الكاملة:
+      <ol style="margin:6px 0 0;padding-inline-start:20px;line-height:2">
+        <li>Authentication ← Sign-in method ← تفعيل <b>Email/Password</b>.</li>
+        <li>Firestore ← Rules ← لصق القواعد أعلاه ← Publish.</li>
+        <li>Google Cloud Console ← Credentials ← مفتاح الويب ← تقييده بنطاق موقعكم فقط
+          (<span class="noar" style="direction:ltr">HTTP referrers</span>).</li>
+        <li>عند دخول كل مستخدم يُنشأ له حساب سحابة تلقائيًا، وكلمة مروره يجب ألا تقل عن 6 أحرف.</li>
+      </ol></div>
+  </div>
+  <div class="mf"><button class="btn gold" onclick="copyRules()">نسخ القواعد</button>
+  <button class="btn ghost" onclick="closeModal()">إغلاق</button></div></div>`);
+}
+function copyRules(){
+  const t=document.getElementById('rl_txt');
+  try{t.select();navigator.clipboard.writeText(t.value);toast('نُسخت القواعد','ok')}
+  catch(e){toast('حدّد النص وانسخه يدويًا','dan')}
+}
 function saveFb(){
   const g=x=>document.getElementById(x).value;
   S.settings.fb={enabled:g('fb_on')==='1',projectId:g('fb_pid').trim(),apiKey:g('fb_key').trim(),
     doc:g('fb_doc').trim()||'warehouse/state',poll:num(g('fb_poll'))||15,
-    auth:false,domain:'droub.local'};
+    auth:g('fb_auth')==='1',requireAuth:g('fb_req')==='1',domain:g('fb_dom').trim()||'droub.local'};
   logIt('تعديل إعدادات المزامنة','إعدادات',S.settings.fb.projectId,'','');
   save();startSync();renderPage();toast('حُفظت إعدادات المزامنة','ok');
 }
@@ -6423,7 +6729,41 @@ function fbUrl(){
   return 'https://firestore.googleapis.com/v1/projects/'+c.projectId+
     '/databases/(default)/documents/'+(c.doc||'warehouse/state')+'?key='+encodeURIComponent(c.apiKey);
 }
-let AU={idToken:'',refresh:'',exp:0,email:'',err:''};
+let AU={idToken:'',refresh:'',exp:0,email:'',err:'',uid:'',tried:false,bypass:false};
+function authRequired(){return !!(fbOn()&&fbCfg().auth&&fbCfg().requireAuth)}
+function authed(){return !!AU.idToken}
+function isReadOnly(){
+  if(!ses||AU.bypass)return false;
+  if(!authRequired())return false;
+  return AU.tried&&!authed();   /* لا نمنع أثناء محاولة التوثيق، بل بعد فشلها */
+}
+function roBanner(){
+  if(!isReadOnly())return '';
+  return `<div class="note dan" style="margin-bottom:14px">
+    <b>&#128274; وضع القراءة فقط.</b> تعذّر توثيق حسابك في السحابة.
+    ${AU.err?`<br><span style="font-size:12.5px">${h(AU.err)}</span>`:''}
+    <br>يمكنك الاطلاع على البيانات دون أي تعديل أو حفظ حتى يكتمل التوثيق.
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button class="btn gold sm" onclick="retryAuth()">&#8635; إعادة المحاولة</button>
+      ${ses.role==='admin'?`<button class="btn ghost sm" onclick="bypassRO()">متابعة بلا مزامنة (مسؤول النظام)</button>`:''}
+    </div></div>`;
+}
+async function retryAuth(){
+  if(!ses)return;
+  toast('جارٍ توثيق الحساب…');
+  AU.tried=true;
+  const ok=await fbSignIn(ses.username,ses.pass);
+  render();
+  toast(ok?('تم التوثيق باسم '+AU.email):('تعذّر التوثيق: '+AU.err),ok?'ok':'dan');
+}
+function bypassRO(){
+  if(!ses||ses.role!=='admin')return toast('هذا الخيار لمدير النظام','dan');
+  confirmBox('متابعة بلا مزامنة',
+    `<div class="note dan">ستعمل على نسختك المحلية فقط، ولن تُرفع تغييراتك إلى السحابة
+      ولن تصل الأجهزة الأخرى حتى يكتمل التوثيق.</div>`,()=>{
+    AU.bypass=true;render();toast('تفعيل التعديل المحلي — المزامنة موقوفة','ok');
+  },'dan');
+}
 function fbEmail(username){return String(username||'').trim().toLowerCase()+'@'+(fbCfg().domain||'droub.local')}
 async function idtPost(path,body){
   const r=await fetch('https://identitytoolkit.googleapis.com/v1/accounts:'+path+'?key='+encodeURIComponent(fbCfg().apiKey),
@@ -6434,6 +6774,7 @@ async function idtPost(path,body){
 }
 function setTok(j,email){
   AU.idToken=j.idToken||'';AU.refresh=j.refreshToken||'';
+  AU.uid=j.localId||AU.uid||'';
   AU.exp=Date.now()+((num(j.expiresIn)||3600)-60)*1000;AU.email=email||AU.email;AU.err='';
 }
 function authMsg(code){
@@ -6536,7 +6877,7 @@ function sortState(o){
 /* دمج نسختين بدل استبدال إحداهما، حتى لا تضيع تسجيلات أو طلبات جهاز آخر */
 function mergeStates(local,remote,preferRemote){
   const base=preferRemote?Object.assign({},local,remote):Object.assign({},remote,local);
-  const TOMBC={users:'users',clubs:'clubs',items:'items',assets:'assets'};
+  const TOMBC={users:'users',clubs:'clubs',items:'items',assets:'assets',reqs:'reqs'};
   base.tomb=Object.assign({},remote.tomb||{});
   Object.keys(local.tomb||{}).forEach(k=>{base.tomb[k]=Object.assign({},(remote.tomb||{})[k]||{},local.tomb[k])});
   SYNC_COLS.forEach(k=>{
@@ -6594,6 +6935,8 @@ async function cloudPull(silent){
 }
 async function cloudPush(force){
   if(!fbOn())return false;
+  if(authRequired()&&!authed()){setSync('err','لم يكتمل توثيق الحساب — الرفع إلى السحابة متوقف');return false}
+  if(AU.bypass){setSync('err','المزامنة موقوفة (وضع التعديل المحلي)');return false}
   if(SY.busy&&!force)return false;
   if(S.__fresh&&!force)return false;
   SY.busy=true;setSync('push');
@@ -6655,8 +6998,10 @@ if(!S.settings.support)S.settings.support='تحويلة 1234';
 if(!S.settings.appName)S.settings.appName='نظام إدارة مخزن النوادي الثقافية';
 if(!S.settings.whatsapp)S.settings.whatsapp='55486292';
 if(!S.settings.fb)S.settings.fb={enabled:true,apiKey:'AIzaSyAYn7DzTC03I7Q_My7xuJD33ELQwwuhe84',
-  projectId:'droub-55931',doc:'warehouse/state',poll:15,auth:false,domain:'droub.local'};
-S.settings.fb.auth=false;
+  projectId:'droub-55931',doc:'warehouse/state',poll:15,auth:true,requireAuth:true,domain:'droub.local'};
+if(S.settings.fb.auth===undefined)S.settings.fb.auth=true;
+if(S.settings.fb.requireAuth===undefined)S.settings.fb.requireAuth=!!S.settings.fb.auth;
+if(!S.settings.fb.domain)S.settings.fb.domain='droub.local';
 if(!S.settings.fb.domain)S.settings.fb.domain='droub.local';
 if(typeof S.rev!=='number')S.rev=0;
 if(!S.damages)S.damages=[];
@@ -6688,7 +7033,7 @@ if(!S.ideas)S.ideas=[];
 })();
 (function purgeTombed(){
   let n=0;
-  const cols={users:'users',clubs:'clubs',items:'items',assets:'assets'};
+  const cols={users:'users',clubs:'clubs',items:'items',assets:'assets',reqs:'reqs'};
   Object.keys(cols).forEach(k=>{
     const t=S.tomb[k]; if(!t)return;
     const before=S[k].length;
