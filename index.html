@@ -2682,6 +2682,26 @@ function withWindow(title,onOk,kind){
 /* ================= الطلبات ================= */
 let F={q:'',club:'',kind:'',status:'',from:'',to:''};
 function setF(k,v){F[k]=v;renderPage()}
+/* أوراق صفحة متابعة الطلبات */
+const DONE_ST=['closed','cancelled','rejected','returned','returned_short'];
+function reqOpenCust(r){return S.custody.filter(c=>c.reqId===r.id&&c.status==='open'&&custRemain(c)>0)}
+function reqIssuedQty(r){return r.lines.reduce((a,l)=>a+num(l.done),0)}
+/* ورقة المتابعة: عهدة قائمة أو مصروف قابل للإرجاع */
+function isRetReq(r){
+  if(['cancelled','rejected'].includes(r.status))return false;
+  if(r.status==='await_return')return true;
+  if(reqOpenCust(r).length)return true;
+  return reqIssuedQty(r)>0&&r.status!=='closed';
+}
+/* الطلبات الواردة: قيد المعالجة ولم تُغلق ولم تنتقل لورقة الإرجاع */
+function isInbox(r){return !DONE_ST.includes(r.status)&&!isRetReq(r)}
+function reqSheet(list){
+  const t=F.rtab||'';
+  if(t==='ret')return list.filter(isRetReq);
+  if(t==='all'||t==='club')return list;
+  if(t==='done')return list.filter(r=>DONE_ST.includes(r.status));
+  return list.filter(isInbox);
+}
 function reqFiltered(){
   const pri=r=>r.status==='await_return'?0:(['closed','rejected','returned','returned_short','cancelled'].includes(r.status)?2:1);
   return scopedReqs().slice().sort((a,b)=>pri(a)-pri(b)||
@@ -2702,7 +2722,10 @@ function pgReqs(){
   const clubOpts=S.clubs.map(c=>`<option value="${c.id}" ${F.club===c.id?'selected':''}>${h(c.name)}</option>`).join('');
   const stOpts=Object.keys(ST).map(k=>`<option value="${k}" ${F.status===k?'selected':''}>${ST[k]}</option>`).join('');
   const bulk=can('manager','keeper')||ses.role==='admin';
-  const rows=list.map(r=>{
+  const nInbox=list.filter(isInbox).length, nRet=list.filter(isRetReq).length,
+        nDone=list.filter(r=>DONE_ST.includes(r.status)).length;
+  const shown=reqSheet(list);
+  const rows=shown.map(r=>{
     const acts=reqActions(r).slice(0,1).map(a=>`<button class="btn ${a.cls||'ghost'} sm" onclick="${a.fn}">${a.t}</button>`).join('');
     const kitShort=r.kit&&r.kitShort&&r.kitShort.length;
     return `<tr class="${kitShort||r.dup?'red':''}">${bulk?`<td><input type="checkbox" class="chk rb" data-id="${r.id}"></td>`:''}
@@ -2742,14 +2765,69 @@ function pgReqs(){
     ${ses.role==='admin'?`<button class="btn dan sm" onclick="bulkCancelReqs()">إلغاء المحدد</button>
     <button class="btn dan sm" onclick="bulkDelReqs()">&#128465; حذف المحدد</button>`:''}
     <button class="btn ghost sm" onclick="printClubRequests(selectedReqs())">&#128424; طباعة المحدد</button></div>`:''}
-  ${ses.role!=='club'?`<div class="toolbar" style="margin-top:-4px">
-    <button class="btn ${F.rtab!=='club'?'gold':'ghost'} sm" onclick="F.rtab='';renderPage()">كل الطلبات</button>
-    <button class="btn ${F.rtab==='club'?'gold':'ghost'} sm" onclick="F.rtab='club';renderPage()">حسب النادي</button></div>`:''}
+  <div class="toolbar" style="margin-top:-4px">
+    ${reqTabBtn('','الطلبات الواردة',nInbox,'p-info')}
+    ${reqTabBtn('ret','بانتظار إرجاع العهدة والمصروف',nRet,'p-dan')}
+    ${reqTabBtn('done','المنتهية',nDone,'p-gray')}
+    ${reqTabBtn('all','كل الطلبات',list.length,'p-gold')}
+    ${ses.role!=='club'?reqTabBtn('club','حسب النادي',S.clubs.filter(c=>list.some(r=>r.clubId===c.id)).length,'p-ok'):''}
+  </div>
+  ${F.rtab==='ret'?retSheet(list.filter(isRetReq)):''}
   ${F.rtab==='club'&&ses.role!=='club'?reqClubGroups(list):''}
-  <div class="card" ${F.rtab==='club'&&ses.role!=='club'?'style="display:none"':''}><div class="tw"><table id="tblR"><thead><tr>${bulk?'<th class="nos"></th>':''}<th>رقم الطلب</th><th>النوع</th>
+  <div class="card" ${(F.rtab==='club'&&ses.role!=='club')||F.rtab==='ret'?'style="display:none"':''}><div class="tw"><table id="tblR"><thead><tr>${bulk?'<th class="nos"></th>':''}<th>رقم الطلب</th><th>النوع</th>
     ${ses.role!=='club'?'<th>النادي</th>':''}<th>الأصناف</th><th>التاريخ</th><th>الحالة</th><th class="nos"></th></tr></thead>
-    <tbody>${rows||`<tr><td colspan="9"><div class="empty"><b>لا توجد طلبات مطابقة</b>غيّر الفلاتر أو أنشئ طلبًا جديدًا.</div></td></tr>`}</tbody>
+    <tbody>${rows||`<tr><td colspan="9"><div class="empty">
+      <b>${F.rtab==='done'?'لا توجد طلبات منتهية':'لا توجد طلبات واردة'}</b>
+      ${F.rtab?'غيّر الفلاتر أو اختر ورقة أخرى.':'كل الطلبات الواردة عولجت — راجع ورقة «بانتظار إرجاع العهدة» أو «كل الطلبات».'}
+      </div></td></tr>`}</tbody>
   </table></div></div>`;
+}
+function reqTabBtn(k,t,n,cls){
+  const on=(F.rtab||'')===k;
+  return `<button class="btn ${on?'gold':'ghost'} sm" onclick="F.rtab='${k}';renderPage()">${h(t)}
+    ${n?`<span class="pill ${cls}" style="margin-inline-start:6px">${n}</span>`:''}</button>`;
+}
+function retSheet(list){
+  const rows=list.map(r=>{
+    const cust=reqOpenCust(r), rem=cust.reduce((a,c)=>a+custRemain(c),0);
+    const issued=reqIssuedQty(r);
+    const late=cust.filter(c=>c.dueAt&&c.dueAt<today()).length;
+    const kind=cust.length?'<span class="pill p-dan">عهدة قائمة</span>'
+      :'<span class="pill p-warn">مصروف قابل للإرجاع</span>';
+    const names=(cust.length?cust.map(c=>c.assetName+' ('+custRemain(c)+')')
+      :r.lines.filter(l=>num(l.done)>0).map(l=>l.name+' ('+l.done+')')).slice(0,4);
+    return `<tr class="${late?'red':''}">
+      <td class="mono">${h(r.no)}</td>
+      ${ses.role!=='club'?`<td>${h(clubName(r.clubId))}
+        ${r.requesterName?`<div style="font-size:11.5px;color:var(--ink3)">الطالب: ${h(r.requesterName)}</div>`:''}</td>`:''}
+      <td>${kind}${late?`<div><span class="pill p-dan">${late} متأخرة</span></div>`:''}</td>
+      <td style="text-align:right">${h(names.join(' · '))}${(cust.length||r.lines.length)>4?' …':''}</td>
+      <td class="mono">${issued}</td>
+      <td class="mono" style="font-weight:800">${cust.length?rem:issued}</td>
+      <td>${fmtD(r.dates.out||r.dates.created)}</td>
+      <td>${cust.length?(cust[0].dueAt?fmtD(cust[0].dueAt):'—'):'—'}</td>
+      <td>${pill(r.status)}</td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn ghost sm" onclick="openReq('${r.id}')">تفاصيل</button>
+        ${ses.role==='club'&&cust.length?`<button class="btn dan sm" onclick="go('custody')">طلب الإرجاع</button>`:''}
+        ${can('manager','keeper')&&cust.length?`<button class="btn gold sm" onclick="F.club='${r.clubId}';go('custody')">فتح العهد</button>`:''}
+        ${ses.role==='admin'&&issued?`<button class="btn dan sm" onclick="reverseIssue('${r.id}')">إرجاع المصروف للمخزون</button>`:''}
+      </td></tr>`;
+  }).join('');
+  const totRem=list.reduce((a,r)=>{const c=reqOpenCust(r);return a+(c.length?c.reduce((x,y)=>x+custRemain(y),0):reqIssuedQty(r))},0);
+  return `<div class="note dan" style="margin-bottom:12px">
+    <b>&#128273; متابعة ما بعد الصرف.</b> هنا الطلبات التي لا تزال عليها عهد لم تُرجَع، والطلبات التي صُرفت
+    ويمكن إرجاع مصروفها إلى المخزون. الإجمالي المتبقي: <b>${totRem}</b> وحدة في <b>${list.length}</b> طلب.
+    ${ses.role==='admin'?'<br>«إرجاع المصروف للمخزون» يعيد الكميات ويُلغي العهد المرتبطة ويُسجَّل في التدقيق.':''}</div>
+  ${can('manager')&&list.length?`<div class="toolbar" style="margin-top:-4px">
+    <button class="btn gold sm" onclick="go('custody')">&#8630; صفحة العهد والاسترجاع الجماعي</button>
+    <button class="btn ghost sm" onclick="printTable('tblRet','بانتظار إرجاع العهدة')">&#128424; طباعة</button>
+    <button class="btn ghost sm" onclick="exportTable('tblRet','بانتظار_الإرجاع')">&#128202; Excel</button></div>`:''}
+  <div class="card"><div class="tw"><table id="tblRet"><thead><tr><th>رقم الطلب</th>
+    ${ses.role!=='club'?'<th>النادي</th>':''}<th>نوع المتابعة</th><th>الأصناف</th><th>المصروف</th>
+    <th>المتبقي</th><th>تاريخ الصرف</th><th>موعد الإرجاع</th><th>الحالة</th><th class="nos"></th></tr></thead>
+    <tbody>${rows||`<tr><td colspan="10"><div class="empty"><b>لا توجد عهد أو مصروفات معلّقة</b>
+      كل ما صُرف أُرجع أو أُغلق.</div></td></tr>`}</tbody></table></div></div>`;
 }
 function reqClubGroups(list){
   const ids=[...new Set(list.map(r=>r.clubId))];
@@ -2800,6 +2878,8 @@ function reqActions(r){
   if(canCancel(r))a.push({t:'إلغاء الطلب',fn:`cancelReq('${r.id}')`,cls:'dan'});
   if(r.status==='rejected'||r.status==='closed'){
     if(ses.role==='admin'){
+      if(r.lines.some(l=>num(l.done)>0))
+        a.push({t:'إرجاع المصروف للمخزون',fn:`reverseIssue('${r.id}')`,cls:'dan'});
       a.push({t:'إلغاء الطلب',fn:`cancelReq('${r.id}')`,cls:'dan'});
       a.push({t:'حذف الطلب',fn:`delReq('${r.id}')`,cls:'dan'});
     }
