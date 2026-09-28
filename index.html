@@ -2737,7 +2737,8 @@ function pgReqs(){
       ${r.dup?'<div><span class="pill p-dan">عهدة قائمة بنفس المسمى</span></div>':''}</td>
     ${ses.role!=='club'?`<td>${h(clubName(r.clubId))}
       ${r.requesterName?`<div style="font-size:11.5px;color:var(--ink3)">الطالب: ${h(r.requesterName)}</div>`:''}</td>`:''}
-    <td class="mono">${r.lines.length}</td><td>${fmtD(r.dates.created)}</td><td>${pill(r.status)}</td>
+    <td class="mono">${lineCount(r)}${r.kit?'<div style="font-size:11px;color:var(--ink3)">حقيبة كاملة</div>':''}</td>
+    <td>${fmtD(r.dates.created)}</td><td>${pill(r.status)}</td>
     <td style="display:flex;gap:6px"><button class="btn ghost sm" onclick="openReq('${r.id}')">تفاصيل</button>${acts}</td></tr>`;
   }).join('');
   return `${ls&&ls.nos.length?`<div class="note" style="margin-bottom:14px;background:#e2efe7;border-color:#b9ddc8;color:#286249">
@@ -2783,6 +2784,27 @@ function pgReqs(){
       </div></td></tr>`}</tbody>
   </table></div></div>`;
 }
+/* الحقيبة تُعرض في الطلبات كوحدة واحدة، وتتبعثر عند الإرجاع فقط */
+function isKitLine(r,l){return !!(r.kit&&String(l.notes||'').indexOf('ضمن '+(r.kitName||kitDef().name))===0)}
+function kitSummary(r){
+  const ls=r.lines.filter(l=>isKitLine(r,l));
+  if(!ls.length)return null;
+  const done=ls.reduce((a,l)=>a+num(l.done),0), qty=ls.reduce((a,l)=>a+num(l.qty),0);
+  return {lines:ls,qty,done,
+    items:ls.map(l=>l.name+' ×'+l.qty),
+    status:done>=qty?'issued':(done>0?'issued_part':(ls[0]||{}).status||'pending')};
+}
+/* أسطر العرض: بند واحد للحقيبة + بقية الأصناف كما هي */
+function viewLines(r){
+  const k=kitSummary(r);
+  if(!k)return r.lines.map(l=>({l}));
+  const rest=r.lines.filter(l=>!isKitLine(r,l)).map(l=>({l}));
+  return [{kit:k}].concat(rest);
+}
+function lineCount(r){
+  const k=kitSummary(r);
+  return k?(1+r.lines.length-k.lines.length):r.lines.length;
+}
 function reqTabBtn(k,t,n,cls){
   const on=(F.rtab||'')===k;
   return `<button class="btn ${on?'gold':'ghost'} sm" onclick="F.rtab='${k}';renderPage()">${h(t)}
@@ -2819,7 +2841,7 @@ function retSheet(list){
           ${asked?'متابعة طلب الإرجاع':'طلب إرجاع العهدة'}</button>`:''}
         ${can('manager','keeper')&&cust.length?`<button class="btn gold sm" onclick="F.club='${r.clubId}';go('custody')">استلام الإرجاع</button>`:''}
         ${can('manager','keeper')&&dmg?`<button class="btn dan sm" onclick="F.club='${r.clubId}';F.ctab='stuck';go('custody')">قرار التالف</button>`:''}
-        ${ses.role==='admin'&&issued?`<button class="btn dan sm" onclick="reverseIssue('${r.id}')">إرجاع المصروف للمخزون</button>`:''}
+        ${ses.role==='admin'&&reversibleQty(r)?`<button class="btn dan sm" onclick="reverseIssue('${r.id}')">إرجاع المصروف للمخزون</button>`:''}
       </td></tr>`;
   }).join('');
   const totRem=list.reduce((a,r)=>a+reqOpenCust(r).reduce((x,y)=>x+custRemain(y),0),0);
@@ -2890,7 +2912,7 @@ function reqActions(r){
   if(canCancel(r))a.push({t:'إلغاء الطلب',fn:`cancelReq('${r.id}')`,cls:'dan'});
   if(r.status==='rejected'||r.status==='closed'){
     if(ses.role==='admin'){
-      if(r.lines.some(l=>num(l.done)>0))
+      if(reversibleQty(r)>0)
         a.push({t:'إرجاع المصروف للمخزون',fn:`reverseIssue('${r.id}')`,cls:'dan'});
       a.push({t:'إلغاء الطلب',fn:`cancelReq('${r.id}')`,cls:'dan'});
       a.push({t:'حذف الطلب',fn:`delReq('${r.id}')`,cls:'dan'});
@@ -2915,14 +2937,14 @@ function reqActions(r){
       a.push({t:'تسجيل الشراء',fn:`buyModal('${r.id}')`,cls:'gold'});
     if(can('manager','keeper')&&['bought','bought_part','to_keeper'].includes(r.status)&&!unCls)
       a.push({t:'تسجيل التوريد',fn:`grnModal('${r.id}')`,cls:'gold'});
-    if(ses.role==='admin'&&r.lines.some(l=>(l.done||0)>0))
+    if(ses.role==='admin'&&reversibleQty(r)>0)
       a.push({t:'إرجاع المصروف للمخزون',fn:`reverseIssue('${r.id}')`,cls:'dan'});
     if(can('manager','supervisor')&&!r.purApproved&&!unCls&&
        ['received','ready','to_keeper','bought','bought_part'].includes(r.status))
       a.push({t:'اعتماد الشراء',fn:`approvePurchase('${r.id}')`,cls:'ok'});
   }
   /* الصرف: مدير المخزن فقط */
-  if(ses.role==='admin'&&r.kind!=='purchase'&&r.lines.some(l=>(l.done||0)>0))
+  if(ses.role==='admin'&&r.kind!=='purchase'&&reversibleQty(r)>0)
     a.push({t:'إرجاع المصروف للمخزون',fn:`reverseIssue('${r.id}')`,cls:'dan'});
   const isSup=ses&&ses.role==='supervisor';
   if(can('manager','keeper')&&!isSup){
@@ -2947,7 +2969,22 @@ function openReq(id){
   const isPurchase=r.kind==='purchase';
   const canClassify=can('manager','keeper')&&['classify','review','new'].includes(r.status)&&isPurchase;
   const staff=can('manager','keeper');
-  const lines=r.lines.map(l=>`<tr>${staff?`<td><input type="checkbox" class="chk lnchk" data-id="${l.id}"></td>`:''}
+  const kitRow=(function(){
+    const k=kitSummary(r);
+    if(!k)return '';
+    return `<tr style="background:var(--dan-l)">
+      ${staff?`<td><input type="checkbox" class="chk lnchk" data-ids="${k.lines.map(l=>l.id).join(',')}"></td>`:''}
+      <td style="font-weight:800">&#127890; ${h(r.kitName||kitDef().name)}
+        <div style="font-size:11.5px;color:var(--ink3);font-weight:400">تُصرف كاملة ولا تُجزّأ —
+          ${h(k.items.join(' · '))}</div></td>
+      <td class="mono">1</td><td>حقيبة</td>
+      <td><span class="pill p-gold">أصول ثابتة (عهدة)</span></td>
+      <td class="mono">${k.done>=k.qty?1:0}</td>
+      <td>${k.done>=k.qty?'<span class="pill p-ok">صُرفت كاملة</span>'
+        :k.done>0?'<span class="pill p-warn">صُرف جزء منها</span>':'<span class="pill p-info">بانتظار الصرف</span>'}</td>
+      <td>${k.done?'تتبعثر عند الإرجاع لتسجيل التالف':'—'}</td></tr>`;
+  })();
+  const lines=kitRow+r.lines.filter(l=>!isKitLine(r,l)).map(l=>`<tr>${staff?`<td><input type="checkbox" class="chk lnchk" data-id="${l.id}"></td>`:''}
     <td>${h(l.name)}</td><td class="mono">${l.qty}</td><td>${h(l.unit)}</td>
     <td>${canClassify?`<select onchange="setCls('${r.id}','${l.id}',this.value)">
         <option value="">— اختر —</option>
@@ -3034,7 +3071,11 @@ function openReq(id){
 }
 let SEL_LINES=null;
 function selAct(id,act){
-  const ids=[...document.querySelectorAll('.lnchk:checked')].map(x=>x.dataset.id);
+  const ids=[];
+  document.querySelectorAll('.lnchk:checked').forEach(x=>{
+    if(x.dataset.ids)String(x.dataset.ids).split(',').forEach(v=>{if(v)ids.push(v)});
+    else if(x.dataset.id)ids.push(x.dataset.id);
+  });
   if(!ids.length)return toast('حدّد صنفًا واحدًا على الأقل من جدول الأصناف','dan');
   SEL_LINES=ids;
   const r=S.reqs.find(x=>x.id===id);
@@ -3136,20 +3177,30 @@ function setCls(rid,lid,v){
   l.cls=v;rememberCls(l.name,v,l.cat);save();logIt('تصنيف صنف','طلب',r.no,'',l.name+' → '+(v==='asset'?'أصل ثابت':'مادة استهلاكية'));
 }
 function hist(r,txt){r.hist.push({ts:nowISO(),by:ses.fullName,txt})}
+/* المواد الاستهلاكية تُصرف ولا تُرجَع — الإرجاع للأصول الثابتة فقط */
+function lineCls(r,l){return l.cls||(r.kind==='asset'?'asset':'consumable')}
+function reversibleQty(r){
+  return r.lines.reduce((a,l)=>a+(lineCls(r,l)==='asset'?num(l.done):0),0);
+}
 function reverseIssue(id){
   if(ses.role!=='admin')return toast('هذا الإجراء لمدير النظام','dan');
   const r=S.reqs.find(x=>x.id===id);
-  const tot=r.lines.reduce((a,l)=>a+num(l.done),0);
-  if(!tot)return toast('لا توجد كميات مصروفة لإرجاعها','dan');
+  const tot=reversibleQty(r);
+  if(!tot)return toast('لا توجد أصول ثابتة مصروفة لإرجاعها — المواد الاستهلاكية تُصرف ولا تُرجَع للمخزن','dan');
+  const consQ=r.lines.reduce((a,l)=>a+(lineCls(r,l)==='consumable'?num(l.done):0),0);
   confirmBox('إرجاع المصروف للمخزون',
-    `سيُعاد ${tot} وحدة من الطلب ${h(r.no)} إلى المخزون، وتُلغى عهده القائمة، وتُسجَّل الحركة في التدقيق.`,()=>{
+    `<div class="note dan">سيُعاد <b>${tot}</b> وحدة من الأصول الثابتة في الطلب ${h(r.no)} إلى المخزون،
+      وتُلغى عهده القائمة، وتُسجَّل الحركة في التدقيق.</div>
+     ${consQ?`<div class="note" style="margin-top:10px">المواد الاستهلاكية (${consQ} وحدة) لا تُرجَع للمخزن
+       وتبقى مصروفة كما هي.</div>`:''}`,()=>{
     let n=0;
     r.lines.forEach(l=>{
+      const cls=lineCls(r,l);
+      if(cls!=='asset')return;                 /* الاستهلاكية لا تُرجَع */
       const q=num(l.done); if(!q)return;
-      const cls=l.cls||(r.kind==='asset'?'asset':'consumable');
-      const t=cls==='asset'?assetById(l.refId):itemById(l.refId);
+      const t=assetById(l.refId);
       if(t){const before=t.qty;t.qty+=q;
-        addMove('إرجاع مصروف للمخزون',cls==='asset'?'أصل ثابت':'مادة استهلاكية',t.name,q,before,t.qty,
+        addMove('إرجاع مصروف للمخزون','أصل ثابت',t.name,q,before,t.qty,
           'إرجاع بواسطة مدير النظام',r.no,r.clubId);}
       l.done=0;l.status='pending';n+=q;
     });
@@ -3696,7 +3747,8 @@ function issueModal(id){
     return toast('بانتظار «اعتماد الشراء» من مشرف النوادي قبل الصرف للنادي','dan');
   const ls=selFilter(issueLines(r));
   if(!ls.length){toast('لا توجد أصناف جاهزة للصرف في هذا الطلب','dan');return}
-  const rows=ls.map(l=>{
+  const kitLs=ls.filter(l=>isKitLine(r,l)), othLs=ls.filter(l=>!isKitLine(r,l));
+  const rowOf=l=>{
     const cls=l.cls||(r.kind==='asset'?'asset':'consumable');
     const tgt=cls==='asset'?(assetById(l.refId)||S.assets.find(a=>a.name===l.name)):(itemById(l.refId)||S.items.find(i=>i.name===l.name));
     const stock=tgt?tgt.qty:0;
@@ -3707,9 +3759,15 @@ function issueModal(id){
       معيار التوزيع: ${ql.max} لكل نادٍ ${h(quotaPeriod())} — صُرف ${ql.taken} والمتاح ${ql.left}</div>`:''}</td>
       <td>${cls==='asset'?'أصل ثابت (عهدة)':'مادة استهلاكية'}</td>
       <td class="mono">${rem}</td><td class="mono">${stock}</td>
-      <td>${max>0?`<input type="number" min="0" max="${max}" id="s_${l.id}" value="${max}" style="width:90px">`
+      <td>${max>0?`<input type="number" min="0" max="${max}" id="s_${l.id}" value="${max}" style="width:90px"
+        ${isKitLine(r,l)?'readonly title="محتوى الحقيبة يُصرف كاملًا ولا يُجزّأ"':''}>`
         :'<span class="pill p-dan">لا يوجد رصيد</span>'}</td>
-      <td><input type="text" id="sn_${l.id}" placeholder="ملاحظة"></td></tr>`}).join('');
+      <td><input type="text" id="sn_${l.id}" placeholder="ملاحظة"></td></tr>`};
+  const kitHead=kitLs.length?`<tr style="background:var(--dan-l)"><td colspan="6" style="font-weight:800">
+    &#127890; ${h(r.kitName||kitDef().name)} — تُصرف كاملة بمحتوياتها ولا تُجزّأ، وتتبعثر عند الإرجاع لتسجيل التالف</td></tr>`:'';
+  const rows=kitHead+kitLs.map(rowOf).join('')+
+    (othLs.length&&kitLs.length?`<tr style="background:var(--th-bg)"><td colspan="6" style="font-weight:700">أصناف أخرى في الطلب</td></tr>`:'')
+    +othLs.map(rowOf).join('');
   modal(`<div class="modal lg"><div class="mh"><h3>صرف مواد الطلب ${h(r.no)} — ${h(clubName(r.clubId))}</h3><button onclick="closeModal()">&times;</button></div>
   <div class="mb"><div class="row">
     <div class="field"><label>تاريخ الخروج</label><input id="s_date" type="date" value="${today()}"></div>
@@ -4037,7 +4095,14 @@ function printPage(html,title){
 function printDoc(html){printPage(html,'طباعة')}
 function printReq(id){
   const r=S.reqs.find(x=>x.id===id);
-  const rows=r.lines.map((l,i)=>`<tr><td>${i+1}</td><td style="text-align:right;font-weight:700">${h(l.name)}</td>
+  const kS=kitSummary(r);
+  let i0=0;
+  const kRow=kS?`<tr><td>${++i0}</td><td style="text-align:right;font-weight:700">${h(r.kitName||kitDef().name)}
+    <div style="font-size:11px;font-weight:400">${h(kS.items.join(' · '))}</div></td>
+    <td>1</td><td>حقيبة</td><td>أصل ثابت</td><td>${kS.done>=kS.qty?1:0}</td>
+    <td>تُصرف كاملة وتُرجَع كاملة</td></tr>`:'';
+  const rows=kRow+r.lines.filter(l=>!isKitLine(r,l)).map(l=>`<tr><td>${++i0}</td>
+    <td style="text-align:right;font-weight:700">${h(l.name)}</td>
     <td>${l.qty}</td><td>${h(l.unit)}</td>
     <td>${l.cls==='asset'?'أصل ثابت':l.cls==='consumable'?'مادة استهلاكية':'—'}</td>
     <td>${l.done||0}</td><td>${h(l.notes||'—')}</td></tr>`).join('');
