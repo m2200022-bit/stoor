@@ -533,6 +533,8 @@ a,.gline,.sub a,.sub2 a,.pill,.ibtn{transition:color var(--t),background-color v
 <script>
 /* ================= الحالة والتخزين ================= */
 const KEY='wh_clubs_v1';
+/* رقم إصدار النظام — يُرفع مع كل تعديل منشور */
+const APP_VER='2.1';
 const ROLES={club:'مستخدم نادي',keeper:'أمين المخزن',supervisor:'مشرف النوادي',manager:'مدير المخزن',admin:'مدير النظام'};
 const ST={
   draft:'مسودة', new:'طلب جديد', review:'بانتظار مراجعة مدير المخزن', classify:'بانتظار التصنيف',
@@ -1468,7 +1470,9 @@ function render(){
           <button class="theme-btn" id="refreshBtn" title="تحديث البيانات دون الخروج" onclick="refreshNow()">&#8635;</button>
           <button class="theme-btn" id="themeBtn" title="الوضع الليلي / النهاري"
             onclick="toggleTheme()">${theme==='dark'?'&#9728;':'&#9789;'}</button>
-          <span id="syncChip">${syncChip()}</span>
+          <span style="display:inline-flex;flex-direction:column;align-items:center;line-height:1.15;gap:2px">
+            <span class="noar" style="font-size:10.5px;font-weight:700;color:var(--ink3);letter-spacing:.3px" title="رقم إصدار النظام">الإصدار ${APP_VER}</span>
+            <span id="syncChip">${syncChip()}</span></span>
           ${(ses.role==='admin'||isActing())?`<button class="btn gold sm" title="التنقل بين المستخدمين والأدوار"
             onclick="switchRoleModal()">&#8646; التنقل بين المستخدمين</button>`:''}
           ${isActing()?`<button class="btn gold sm" onclick="backToSelf()">عودة لحسابك</button>`:''}
