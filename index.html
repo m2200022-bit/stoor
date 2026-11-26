@@ -1071,7 +1071,8 @@ async function doLogin(){
     if(!okM)toast('تعذّر تحديث قائمة أعضاء المخزن في السحابة','dan');
   }
   startSync();
-  if(usr.mustChange)forcePassModal();
+  /* كلمة مرور مكشوفة أو مؤقتة أو أقصر مما تقبله Firebase: تغيير إلزامي */
+  if(usr.mustChange||usr.pass!=null||p.length<6)forcePassModal();
 }
 /* حساب سحابي أُنشئ للتو بكلمة مرور لم يثبت صحتها: يُحذف فورًا حتى لا يبقى بكلمة مرور خاطئة */
 async function dropNewAccount(){
@@ -1113,13 +1114,32 @@ async function changeOwnPass(n){
   const me=S.users.find(x=>x.id===ses.id)||ses;
   const cloud=fbOn()&&fbCfg().auth;
   if(cloud){
-    if(!authed()){toast('لا يمكن تغيير كلمة المرور قبل اكتمال الاتصال بالسحابة','dan');return false}
-    if(!(await fbUpdatePassword(n))){toast('لم تُحدَّث كلمة المرور في السحابة: '+authMsg(AU.err),'dan');return false}
+    if(authed()){
+      if(!(await fbUpdatePassword(n))){toast('لم تُحدَّث كلمة المرور في السحابة: '+authMsg(AU.err),'dan');return false}
+    }else{
+      /* لا حساب سحابي بعد (مثل كلمة مرور قديمة أقصر من 6 أحرف): يُنشأ الآن بالكلمة الجديدة */
+      if(!(await fbSignIn(me.username,n,num(me.fbGen)))){
+        toast('تعذّر إنشاء حساب السحابة: '+AU.err,'dan');return false}
+      AU.tried=true;
+    }
   }
   await setUserPass(me,n,false);
-  if(CRED)CRED.pass=n;
+  CRED={username:me.username,pass:n,gen:num(me.fbGen)};
   ses=me;logIt('تغيير كلمة المرور','مستخدم',me.username,'','تم');
-  save();if(cloud)await cloudPush(true);
+  save();
+  if(cloud){
+    await cloudPull(true,true);
+    const u2=S.users.find(x=>x.id===me.id);
+    if(u2&&u2.mustChange){await setUserPass(u2,n,false);ses=u2;save()}
+    await cloudPush(true);
+    if(canManageMembers()){
+      const k=await migratePasswords();
+      const okM=await syncMembers(true);
+      if(k)toast('حُوّلت '+k+' كلمة مرور إلى تجزئة آمنة','ok');
+      if(!okM)toast('تعذّر تحديث قائمة أعضاء المخزن في السحابة','dan');
+    }
+  }
+  render();
   return true;
 }
 function logoutNow(){
@@ -6973,7 +6993,12 @@ document.addEventListener('keydown',e=>{
 
 /* ================= المزامنة السحابية (Firestore REST) ================= */
 let SY={state:'idle',last:null,err:'',busy:false,timer:null,pushT:null,lastStatus:0,dirty:false};
-function fbCfg(){return (S.settings&&S.settings.fb)||{}}
+/* المصادقة إلزامية دائمًا: بيانات المخزن محمية بقواعد Firestore ولا تُقرأ دون دخول */
+function fbCfg(){
+  const c=(S.settings&&S.settings.fb)||{};
+  c.auth=true;c.requireAuth=true;
+  return c;
+}
 function fbOn(){const c=fbCfg();return !!(c.enabled&&c.apiKey&&c.projectId&&typeof fetch==='function')}
 function fbUrl(){
   const c=fbCfg();
