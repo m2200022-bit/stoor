@@ -534,7 +534,7 @@ a,.gline,.sub a,.sub2 a,.pill,.ibtn{transition:color var(--t),background-color v
 /* ================= الحالة والتخزين ================= */
 const KEY='wh_clubs_v1';
 /* رقم إصدار النظام — يُرفع مع كل تعديل منشور */
-const APP_VER='2.1';
+const APP_VER='2.2';
 const ROLES={club:'مستخدم نادي',keeper:'أمين المخزن',supervisor:'مشرف النوادي',manager:'مدير المخزن',admin:'مدير النظام'};
 const ST={
   draft:'مسودة', new:'طلب جديد', review:'بانتظار مراجعة مدير المخزن', classify:'بانتظار التصنيف',
@@ -597,7 +597,8 @@ function save(){
   }
   try{ if(typeof schedulePush==='function')schedulePush(); }catch(e){}
   try{ if(typeof scheduleMembers==='function')scheduleMembers(); }catch(e){}
-  try{ localStorage.setItem(KEY,JSON.stringify(S)); }
+  try{ if(typeof schedulePriv==='function')schedulePriv(); }catch(e){}
+  try{ harvestPriv(); localStorage.setItem(KEY,JSON.stringify(stripSecrets(S))); }
   catch(e){ toast('تعذّر حفظ البيانات: مساحة المتصفح ممتلئة. صدّر نسخة احتياطية ثم احذف بيانات قديمة.','dan'); }
 }
 function load(){
@@ -1046,7 +1047,18 @@ async function doLogin(){
         if(!localOk){await dropNewAccount();AU.idToken='';CRED=null;
           return fail('دخلت السحابة، لكن حسابك غير مُدرج في قائمة أعضاء المخزن — راجع مدير النظام')}
       }
-      if(!S.__fresh){usr=S.users.find(x=>x.username===u);localOk=usr?await checkPass(usr,p):false}
+      if(!S.__fresh){
+        usr=S.users.find(x=>x.username===u);
+        if(usr){
+          /* اقرأ البيانات الخاصة: المدير يقرأ الكل، وغيره يقرأ مستنده فقط */
+          let got=false;
+          if(usr.role==='admin'||usr.role==='manager')got=await loadAllPriv();
+          if(!got)await loadMyPriv(usr);
+          else MYPRIV=privRecord(usr);
+          /* حساب بلا تجزئة بعد (قبل التحويل): نجاح دخول Firebase بكلمة المرور نفسها هو الإثبات */
+          localOk=(usr.ph&&usr.ph.hash)||usr.pass!=null?await checkPass(usr,p):true;
+        }else localOk=false;
+      }
     }else if(!usr){
       return fail(AU.code==='bad'?'اسم المستخدم أو كلمة المرور غير صحيحة':'تعذّر الاتصال بالسحابة: '+AU.err);
     }
@@ -1056,7 +1068,8 @@ async function doLogin(){
   if(usr.status==='pending')return fail('الحساب بانتظار الاعتماد');
   if(usr.status==='rejected')return fail('طلب التسجيل مرفوض');
   if(usr.status==='disabled')return fail('الحساب معطّل، راجع مدير النظام');
-  if(!localOk){await dropNewAccount();AU.idToken='';CRED=null;return fail('كلمة المرور غير صحيحة')}
+  if(!localOk){await dropNewAccount();AU.idToken='';CRED=null;
+    return fail(cloud&&!cloudOk&&AU.code==='err'?'تعذّر الاتصال بالسحابة: '+AU.err:'كلمة المرور غير صحيحة')}
   if(!CRED)CRED={username:u,pass:p,gen:num(usr.fbGen)};
   LOGIN_BUSY=false;loginBtn(false);
   S.logins.unshift({id:uid(),ts:nowISO(),username:u,ok:true,why:''});
@@ -1069,10 +1082,12 @@ async function doLogin(){
   if(cloudOk&&(usr.role==='admin'||usr.role==='manager')){
     const n=await migratePasswords();
     const okM=await syncMembers(true);
+    await flushPriv();
     if(n)toast('حُوّلت '+n+' كلمة مرور إلى تجزئة آمنة','ok');
     if(!okM)toast('تعذّر تحديث قائمة أعضاء المخزن في السحابة','dan');
   }
   startSync();
+  if(cloudOk&&!(usr.mustChange||usr.pass!=null||p.length<6))autoBackup();
   /* كلمة مرور مكشوفة أو مؤقتة أو أقصر مما تقبله Firebase: تغيير إلزامي */
   if(usr.mustChange||usr.pass!=null||p.length<6)forcePassModal();
 }
@@ -1127,6 +1142,7 @@ async function changeOwnPass(n){
   }
   await setUserPass(me,n,false);
   CRED={username:me.username,pass:n,gen:num(me.fbGen)};
+  if(cloud&&!canManageMembers()&&MYPRIV)await pushPriv(me,true);
   ses=me;logIt('تغيير كلمة المرور','مستخدم',me.username,'','تم');
   save();
   if(cloud){
@@ -1137,16 +1153,19 @@ async function changeOwnPass(n){
     if(canManageMembers()){
       const k=await migratePasswords();
       const okM=await syncMembers(true);
+      await flushPriv();
       if(k)toast('حُوّلت '+k+' كلمة مرور إلى تجزئة آمنة','ok');
       if(!okM)toast('تعذّر تحديث قائمة أعضاء المخزن في السحابة','dan');
     }
   }
   render();
+  if(cloud)setTimeout(autoBackup,800);
   return true;
 }
 function logoutNow(){
   AU={idToken:'',refresh:'',exp:0,email:'',err:'',uid:'',tried:false,bypass:false,code:'',needRelogin:false,reloginShown:false};
-  clearInterval(SY.timer);REALME=null;CRED=null;MEMBERS_SIG='';
+  clearInterval(SY.timer);REALME=null;CRED=null;MEMBERS_SIG='';PRIV={};PRIV_SIG={};MYPRIV=null;
+  S.users.forEach(u=>{SECRET_KEYS.forEach(k=>delete u[k])});
   if(ses)logIt('تسجيل خروج','مستخدم',ses.username);save();ses=null;authTab='login';renderAuth();
 }
 async function doRegister(){
@@ -5443,6 +5462,7 @@ function pgSettings(){
         <button class="btn dan sm ibtn" title="حذف" onclick="delLoc('${l.id}')">&#128465;</button></td></tr>`).join('')
         ||`<tr><td colspan="5"><div class="empty"><b>لا توجد مواقع</b>أضف رفًا أو خزانة.</div></td></tr>`}</tbody></table></div></div>
 
+  ${canManageMembers()?bkCard():''}
   <div class="card"><div class="card-h"><h3>النسخ الاحتياطي</h3></div><div class="card-b">
     <p style="color:var(--ink2);margin-top:0">تُحفظ البيانات في هذا المتصفح. صدّر نسخة قبل تغيير الجهاز أو مسح بيانات المتصفح.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -7094,20 +7114,26 @@ async function migratePasswords(){
 }
 /* قائمة أعضاء المخزن warehouseAccess/members — المستخدمون المعتمدون فقط */
 let MEMBERS_SIG='';
+function memberSig(){
+  const adm=S.users.filter(u=>u.status==='approved'&&(u.role==='admin'||u.role==='manager')).map(userEmail).sort();
+  return memberEmails().join('|')+'#'+adm.join('|');
+}
 function memberEmails(){
   return [...new Set(S.users.filter(u=>u.status==='approved'&&u.username).map(userEmail))].sort();
 }
 function canManageMembers(){const me=REALME||ses;return !!(me&&(me.role==='admin'||me.role==='manager'))}
 async function syncMembers(force){
   if(!fbOn()||!fbCfg().auth||!authed()||!canManageMembers())return false;
-  const emails=memberEmails(),sig=emails.join('|');
+  const emails=memberEmails(),sig=memberSig();
   if(!force&&sig===MEMBERS_SIG)return true;
   const me=REALME||ses;
   if(!emails.length||!emails.includes(userEmail(me)))return false;   /* لا تكتب قائمة تُخرج المدير نفسه */
   const c=fbCfg();
   const url='https://firestore.googleapis.com/v1/projects/'+c.projectId+
     '/databases/(default)/documents/warehouseAccess/members?key='+encodeURIComponent(c.apiKey);
+  const admins=[...new Set(S.users.filter(u=>u.status==='approved'&&(u.role==='admin'||u.role==='manager')).map(userEmail))].sort();
   const body={fields:{emails:{arrayValue:{values:emails.map(e=>({stringValue:e}))}},
+    admins:{arrayValue:{values:admins.map(e=>({stringValue:e}))}},
     count:{integerValue:String(emails.length)},updatedAt:{stringValue:nowISO()},updatedBy:{stringValue:me.fullName||''}}};
   try{
     const r=await fbFetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -7115,10 +7141,214 @@ async function syncMembers(force){
     MEMBERS_SIG=sig;return true;
   }catch(e){console.warn('members',e);return false}
 }
+
+/* ================= بيانات المستخدمين الخاصة (warehouseUsers/{id}) =================
+   التجزئات والدور والحالة المعتمدة تُحفظ في مستند خاص لكل مستخدم: يقرؤه المدير وصاحبه فقط.
+   المستند المشترك warehouse/state لا يحمل أي تجزئة بعد الآن. */
+const SECRET_KEYS=['pass','ph','phAt','mustChange','fbGen'];
+const PRIV_KEYS=['ph','phAt','mustChange','fbGen'];
+let PRIV={}, PRIV_SIG={}, MYPRIV=null;
+function stripSecrets(o){
+  const c=Object.assign({},o);
+  c.users=(o.users||[]).map(u=>{const x=Object.assign({},u);SECRET_KEYS.forEach(k=>delete x[k]);return x});
+  return c;
+}
+function localSave(){try{localStorage.setItem(KEY,JSON.stringify(stripSecrets(S)))}catch(e){}}
+function harvestPriv(){
+  (S.users||[]).forEach(u=>{
+    if(u.ph&&u.ph.hash){PRIV[u.id]=Object.assign(PRIV[u.id]||{},{ph:u.ph,phAt:u.phAt||'',mustChange:!!u.mustChange,fbGen:num(u.fbGen)})}
+    else if(u.fbGen&&PRIV[u.id])PRIV[u.id].fbGen=num(u.fbGen);
+  });
+}
+function attachPriv(){
+  (S.users||[]).forEach(u=>{
+    const p=PRIV[u.id]; if(!p)return;
+    /* لا تُرجَع تجزئة أقدم فوق أحدث */
+    if(u.ph&&u.ph.hash&&String(u.phAt||'')>String(p.phAt||''))return;
+    Object.assign(u,{ph:p.ph,phAt:p.phAt,mustChange:!!p.mustChange,fbGen:Math.max(num(u.fbGen),num(p.fbGen))});
+    delete u.pass;
+  });
+  /* الدور والحالة المعتمدة للمستخدم الحالي من مستنده الخاص */
+  if(MYPRIV&&ses&&!isActing()){
+    const me=S.users.find(x=>x.id===MYPRIV.id);
+    if(me){me.role=MYPRIV.role;me.status=MYPRIV.status;me.clubId=MYPRIV.clubId||null}
+  }
+}
+/* ترميز Firestore REST */
+function fsEnc(v){
+  if(v===null||v===undefined)return {nullValue:null};
+  if(typeof v==='boolean')return {booleanValue:v};
+  if(typeof v==='number')return Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};
+  if(typeof v==='string')return {stringValue:v};
+  if(Array.isArray(v))return {arrayValue:{values:v.map(fsEnc)}};
+  const f={};Object.keys(v).forEach(k=>{f[k]=fsEnc(v[k])});return {mapValue:{fields:f}};
+}
+function fsDec(x){
+  if(!x)return null;
+  if('stringValue' in x)return x.stringValue;
+  if('booleanValue' in x)return x.booleanValue;
+  if('integerValue' in x)return parseInt(x.integerValue,10);
+  if('doubleValue' in x)return x.doubleValue;
+  if('nullValue' in x)return null;
+  if('arrayValue' in x)return (x.arrayValue.values||[]).map(fsDec);
+  if('mapValue' in x){const o={};const f=x.mapValue.fields||{};Object.keys(f).forEach(k=>{o[k]=fsDec(f[k])});return o}
+  return null;
+}
+function fsDoc(fields){const o={};Object.keys(fields||{}).forEach(k=>{o[k]=fsDec(fields[k])});return o}
+function fsBase(){const c=fbCfg();return 'https://firestore.googleapis.com/v1/projects/'+c.projectId+'/databases/(default)/documents/'}
+function fsKey(){return 'key='+encodeURIComponent(fbCfg().apiKey)}
+function privRecord(u){
+  return {id:u.id,email:userEmail(u),username:u.username,role:u.role,status:u.status,clubId:u.clubId||'',
+    fbGen:num(u.fbGen),ph:u.ph||null,phAt:u.phAt||'',mustChange:!!u.mustChange};
+}
+function privSig(r){return JSON.stringify(r)}
+function applyPrivTo(u,r){
+  if(!u||!r)return;
+  u.role=r.role||u.role;u.status=r.status||u.status;u.clubId=(u.role==='club')?(r.clubId||u.clubId||null):null;
+  if(r.ph&&r.ph.hash){u.ph=r.ph;u.phAt=r.phAt||'';u.mustChange=!!r.mustChange;delete u.pass}
+  u.fbGen=Math.max(num(u.fbGen),num(r.fbGen));
+  PRIV[u.id]={ph:u.ph,phAt:u.phAt,mustChange:!!u.mustChange,fbGen:num(u.fbGen)};
+}
+/* المدير: يقرأ كل المستندات الخاصة ويعتمد ما فيها (يُصلح أي عبث بالدور أو الحالة في المستند المشترك) */
+async function loadAllPriv(){
+  const r=await fbFetch(fsBase()+'warehouseUsers?pageSize=300&'+fsKey());
+  if(!r.ok)return false;
+  const j=await r.json();
+  (j.documents||[]).forEach(d=>{
+    const rec=fsDoc(d.fields);const u=S.users.find(x=>x.id===rec.id);
+    if(u){applyPrivTo(u,rec);PRIV_SIG[u.id]=privSig(privRecord(u))}
+  });
+  return true;
+}
+async function loadMyPriv(u){
+  const r=await fbFetch(fsBase()+'warehouseUsers/'+encodeURIComponent(u.id)+'?'+fsKey());
+  if(!r.ok)return null;
+  const rec=fsDoc((await r.json()).fields);
+  applyPrivTo(u,rec);MYPRIV=rec;
+  return rec;
+}
+async function pushPriv(u,ownOnly){
+  const rec=privRecord(u);
+  let url=fsBase()+'warehouseUsers/'+encodeURIComponent(u.id)+'?'+fsKey();
+  if(ownOnly)url+=['ph','phAt','mustChange'].map(k=>'&updateMask.fieldPaths='+k).join('');
+  const body={fields:{}};Object.keys(rec).forEach(k=>{body.fields[k]=fsEnc(rec[k])});
+  const r=await fbFetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){PRIV_SIG[u.id]=privSig(rec);if(MYPRIV&&MYPRIV.id===u.id)Object.assign(MYPRIV,rec)}
+  return r.ok;
+}
+async function flushPriv(){
+  if(!canManageMembers()||!authed())return;
+  clearTimeout(PRIV_T);
+  const tomb=(S.tomb&&S.tomb.users)||{};
+  for(const u of S.users){
+    if(tomb[u.id]||!(u.ph&&u.ph.hash))continue;
+    if(PRIV_SIG[u.id]===privSig(privRecord(u)))continue;
+    try{await pushPriv(u)}catch(e){}
+  }
+  /* بعد نقل التجزئات إلى المستندات الخاصة يُرفع المستند المشترك نظيفًا */
+  await cloudPush(true);
+}
+let PRIV_T=null;
+function schedulePriv(){
+  if(!canManageMembers()||!authed()||AU.needRelogin)return;
+  clearTimeout(PRIV_T);
+  PRIV_T=setTimeout(async()=>{
+    const tomb=(S.tomb&&S.tomb.users)||{};
+    for(const u of S.users){
+      if(tomb[u.id]||!(u.ph&&u.ph.hash))continue;
+      if(PRIV_SIG[u.id]===privSig(privRecord(u)))continue;
+      try{await pushPriv(u)}catch(e){}
+    }
+  },1200);
+}
+
+/* ================= النسخ الاحتياطي التلقائي إلى مجلد يُختار مرة واحدة ================= */
+const BK_DB='stoor-backup',BK_LAST='wh_last_backup';
+function bkSupported(){return typeof window.showDirectoryPicker==='function'&&typeof indexedDB!=='undefined'}
+function bkIdb(mode,fn){
+  return new Promise((res,rej)=>{
+    const o=indexedDB.open(BK_DB,1);
+    o.onupgradeneeded=()=>o.result.createObjectStore('h');
+    o.onerror=()=>rej(o.error);
+    o.onsuccess=()=>{try{const tx=o.result.transaction('h',mode);const st=tx.objectStore('h');
+      const q=fn(st);tx.oncomplete=()=>res(q&&q.result);tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error)}
+      catch(e){rej(e)}};
+  });
+}
+async function bkGetDir(){try{return await bkIdb('readonly',st=>st.get('dir'))}catch(e){return null}}
+async function bkPickDir(){
+  if(!bkSupported())return toast('هذا المتصفح لا يدعم الحفظ التلقائي في مجلد — استخدم Chrome أو Edge على الحاسوب','dan');
+  try{
+    const d=await window.showDirectoryPicker({id:'stoor-backup',mode:'readwrite'});
+    await bkIdb('readwrite',st=>st.put(d,'dir'));
+    toast('اختير مكان الحفظ: '+d.name,'ok');
+    await bkWrite(d,true);
+    if(route==='settings')renderPage();
+  }catch(e){if(e&&e.name!=='AbortError')toast('تعذّر اختيار المجلد: '+e.message,'dan')}
+}
+function bkFileName(){return 'نسخة-المخزن-'+today()+'.json'}
+async function bkWrite(dir,interactive){
+  try{
+    let perm=await dir.queryPermission({mode:'readwrite'});
+    if(perm!=='granted'&&interactive)perm=await dir.requestPermission({mode:'readwrite'});
+    if(perm!=='granted')return 'need';
+    const data=JSON.stringify(Object.assign({},S,{__backupAt:nowISO(),__by:(REALME||ses||{}).fullName||''}));
+    const fh=await dir.getFileHandle(bkFileName(),{create:true});
+    const w=await fh.createWritable();await w.write(new Blob([data],{type:'application/json'}));await w.close();
+    const at=nowISO();try{localStorage.setItem(BK_LAST,JSON.stringify({at,dir:dir.name,file:bkFileName()}))}catch(e){}
+    toast('تم تحديث النسخة الاحتياطية بتاريخ '+fmtDT(at),'ok');
+    return 'ok';
+  }catch(e){toast('تعذّر حفظ النسخة الاحتياطية: '+(e.message||e),'dan');return 'err'}
+}
+function bkLast(){try{return JSON.parse(localStorage.getItem(BK_LAST)||'null')}catch(e){return null}}
+/* يُستدعى عند كل فتح للنظام (بعد دخول المدير) */
+async function autoBackup(){
+  if(!canManageMembers()||!bkSupported())return;
+  const dir=await bkGetDir();
+  if(!dir){
+    if(sessionStorage.getItem('bk_asked'))return;
+    sessionStorage.setItem('bk_asked','1');
+    if(document.querySelector('#modalRoot [data-force]'))return;
+    modal(`<div class="modal sm"><div class="mh"><h3>&#128190; النسخ الاحتياطي التلقائي</h3><button onclick="closeModal()">&times;</button></div>
+    <div class="mb"><div class="note info">اختر مرة واحدة مجلدًا على جهازك لحفظ النسخ الاحتياطية، ويُستحسن مجلد OneDrive أو Google Drive
+      لتصل النسخة إلى السحابة أيضًا. بعدها تُحفظ نسخة كاملة تلقائيًا كلما فتحت النظام.</div></div>
+    <div class="mf"><button class="btn gold" onclick="closeModal();bkPickDir()">اختيار مكان الحفظ</button>
+    <button class="btn ghost" onclick="closeModal()">لاحقًا</button></div></div>`);
+    return;
+  }
+  const res=await bkWrite(dir,false);
+  if(res==='need')bkAskPermission(dir.name);
+}
+function bkAskPermission(name){
+  /* المتصفح يطلب تأكيد الإذن بنقرة عند فتح الصفحة من جديد */
+  const id='bkbar';if(document.getElementById(id))return;
+  const b=document.createElement('div');b.id=id;b.className='toast';
+  b.style.cssText+='display:flex;gap:10px;align-items:center;animation:none';
+  b.innerHTML='&#128190; النسخة الاحتياطية بانتظار إذن الحفظ في «'+h(name)+'» <button class="btn gold sm" id="bkgo">تحديث النسخة الآن</button>'+
+    '<button class="btn ghost sm" id="bkno">لاحقًا</button>';
+  document.body.appendChild(b);
+  document.getElementById('bkgo').onclick=async()=>{b.remove();const d=await bkGetDir();if(d)await bkWrite(d,true)};
+  document.getElementById('bkno').onclick=()=>b.remove();
+}
+async function bkNow(){const d=await bkGetDir();if(!d)return bkPickDir();await bkWrite(d,true);if(route==='settings')renderPage()}
+function bkCard(){
+  const last=bkLast();
+  return `<div class="card" style="margin-bottom:18px"><div class="card-h"><h3>&#128190; النسخ الاحتياطي التلقائي</h3></div><div class="card-b">
+    ${bkSupported()?`<p style="color:var(--ink2);margin-top:0">تُحفظ نسخة كاملة تلقائيًا في المجلد المختار كلما فتح المدير النظام
+      (ملف واحد لكل يوم: <span class="mono">${h(bkFileName())}</span>). اختر مجلد OneDrive أو Google Drive لتصل النسخة إلى السحابة.</p>
+      <div class="kv" style="margin-bottom:12px"><b>مكان الحفظ</b><span id="bkdir">—</span>
+        <b>آخر تحديث</b><span>${last?fmtDT(last.at)+' — '+h(last.file):'لم تُحفظ نسخة بعد'}</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn gold" onclick="bkNow()">تحديث النسخة الآن</button>
+        <button class="btn ghost" onclick="bkPickDir()">تغيير مكان الحفظ</button></div>`
+    :`<div class="note dan">هذا المتصفح لا يدعم الحفظ التلقائي في مجلد. افتح النظام من Chrome أو Edge على الحاسوب، أو استخدم «تصدير نسخة احتياطية» أدناه.</div>`}
+  </div></div>`;
+}
+
 let MEMBERS_T=null;
 function scheduleMembers(){
   if(!canManageMembers()||!authed())return;
-  if(memberEmails().join('|')===MEMBERS_SIG)return;
+  if(memberSig()===MEMBERS_SIG)return;
   clearTimeout(MEMBERS_T);MEMBERS_T=setTimeout(()=>syncMembers(),1500);
 }
 async function idtPost(path,body){
@@ -7261,8 +7491,8 @@ function setSync(st,err){
   if(el)el.innerHTML=syncChip();
 }
 function packState(){
-  const c={};Object.keys(S).forEach(k=>{c[k]=S[k]});
-  return JSON.stringify(c);
+  /* المستند المشترك لا يحمل أي تجزئة أو كلمة مرور */
+  return JSON.stringify(stripSecrets(S));
 }
 const SYNC_COLS=['users','clubs','items','assets','reqs','vouchers','custody','damages','msgs',
   'audits','moves','log','notes','logins','resets','locations','kits','ideas'];
@@ -7324,14 +7554,15 @@ function mergeStates(local,remote,preferRemote){
 }
 function applyRemote(obj){
   const keepSes=ses?ses.id:null;
-  S=obj;
+  harvestPriv();
+  S=obj;attachPriv();
   if(typeof S.rev!=='number')S.rev=0;
   if(keepSes){
     const u=S.users.find(x=>x.id===keepSes);
     if(u)ses=isActing()?Object.assign({},u,{__imp:true}):u;
     if(REALME){const r=S.users.find(x=>x.id===REALME.id);if(r)REALME=r;}
   }
-  try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+  localSave();
 }
 async function waitIdle(ms){const t=Date.now();while(SY.busy&&Date.now()-t<(ms||15000))await new Promise(r=>setTimeout(r,150))}
 async function cloudPull(silent,force){
@@ -7380,9 +7611,10 @@ async function cloudPush(force){
         const rrev=parseInt((ff.rev&&ff.rev.integerValue)||'0',10);
         const rdata=(ff.data&&ff.data.stringValue)||'';
         if(rdata&&rrev>(S.rev||0)){
+          harvestPriv();
           const merged=mergeStates(S,JSON.parse(rdata),false);
           merged.rev=rrev;
-          S=merged;
+          S=merged;attachPriv();
         }
       }
     }catch(e){if(String(e.message)==='deny')throw new Error('رمز '+SY.lastStatus+' — رفضت السحابة الصلاحية، بياناتك محفوظة محليًا')}
@@ -7392,7 +7624,7 @@ async function cloudPush(force){
     const r=await fbFetch(fbUrl(),{method:'PATCH',
       headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok){const t=await r.text();throw new Error('رمز '+r.status+' '+String(t).slice(0,80))}
-    try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
+    localSave();
     SY.dirty=false;SY.busy=false;setSync('ok');return true;
   }catch(e){SY.busy=false;setSync('err',String(e.message||e));return false}
 }
