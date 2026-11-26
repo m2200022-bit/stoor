@@ -594,6 +594,7 @@ function save(){
     return;
   }
   try{ if(typeof schedulePush==='function')schedulePush(); }catch(e){}
+  try{ if(typeof scheduleMembers==='function')scheduleMembers(); }catch(e){}
   try{ localStorage.setItem(KEY,JSON.stringify(S)); }
   catch(e){ toast('تعذّر حفظ البيانات: مساحة المتصفح ممتلئة. صدّر نسخة احتياطية ثم احذف بيانات قديمة.','dan'); }
 }
@@ -803,7 +804,11 @@ function modal(html){
   r.innerHTML='<div class="ov" onclick="if(event.target===this)closeModal()">'+html+'</div>';
   arabize(r);
 }
-function closeModal(){SEL_LINES=null;document.getElementById('modalRoot').innerHTML=''}
+function closeModal(force){
+  const r=document.getElementById('modalRoot');
+  if(force!==true&&r.querySelector('[data-force]'))return;   /* تغيير كلمة المرور الإلزامي لا يُغلق */
+  SEL_LINES=null;r.innerHTML='';
+}
 function confirmBox(title,msg,onOk,kind){
   window.__ok=()=>{closeModal();onOk()};
   modal(`<div class="modal sm"><div class="mh"><h3>${h(title)}</h3><button onclick="closeModal()">&times;</button></div>
@@ -1012,30 +1017,117 @@ function doRecoverAdmin(id){
   save();closeModal();
   toast('أصبح «'+u.fullName+'» مدير النظام — سجّل الدخول باسم '+u.username,'ok');
 }
-function doLogin(){
+let LOGIN_BUSY=false;
+async function doLogin(){
+  if(LOGIN_BUSY)return;
   const u=document.getElementById('lu').value.trim(), p=document.getElementById('lp').value;
-  const usr=S.users.find(x=>x.username===u);
-  const fail=(why)=>{S.logins.unshift({id:uid(),ts:nowISO(),username:u,ok:false,why});save();toast(why,'dan')};
-  if(!usr)return fail('اسم المستخدم غير موجود');
+  const fail=(why)=>{LOGIN_BUSY=false;loginBtn(false);S.logins.unshift({id:uid(),ts:nowISO(),username:u,ok:false,why});save();toast(why,'dan')};
+  if(!u||!p)return toast('أدخل اسم المستخدم وكلمة المرور','dan');
+  const cloud=fbOn()&&fbCfg().auth;
+  LOGIN_BUSY=true;loginBtn(true);
+  /* جهاز جديد بلا بيانات: لا يُعتمد على البذرة المحلية، بل على السحابة */
+  let usr=(S.__fresh&&cloud)?null:S.users.find(x=>x.username===u);
+  let localOk=usr?await checkPass(usr,p):false;
+  let gen=usr?num(usr.fbGen):0, cloudOk=false;
+  if(cloud){
+    AU.tried=false;
+    cloudOk=await fbSignIn(u,p,gen);
+    /* جهاز جديد بعد إعادة تعيين كلمة المرور: جرّب الأجيال التالية دون إنشاء حسابات */
+    if(!cloudOk&&!usr&&AU.code==='bad'){
+      for(let g=1;g<=5&&!cloudOk;g++){if(await fbSignIn(u,p,g,true)){cloudOk=true;gen=g}}
+    }
+    AU.tried=true;
+    if(cloudOk){
+      CRED={username:u,pass:p,gen};
+      await cloudPull(true,true);                     /* نسخة السحابة هي المرجع */
+      if(SY.lastStatus===403||SY.lastStatus===401){
+        if(!localOk){await dropNewAccount();AU.idToken='';CRED=null;
+          return fail('دخلت السحابة، لكن حسابك غير مُدرج في قائمة أعضاء المخزن — راجع مدير النظام')}
+      }
+      if(!S.__fresh){usr=S.users.find(x=>x.username===u);localOk=usr?await checkPass(usr,p):false}
+    }else if(!usr){
+      return fail(AU.code==='bad'?'اسم المستخدم أو كلمة المرور غير صحيحة':'تعذّر الاتصال بالسحابة: '+AU.err);
+    }
+  }
+  if(!usr){await dropNewAccount();return fail('اسم المستخدم غير موجود')}
+  if(usr.status!=='approved')await dropNewAccount();
   if(usr.status==='pending')return fail('الحساب بانتظار الاعتماد');
   if(usr.status==='rejected')return fail('طلب التسجيل مرفوض');
   if(usr.status==='disabled')return fail('الحساب معطّل، راجع مدير النظام');
-  if(usr.pass!==p)return fail('كلمة المرور غير صحيحة');
+  if(!localOk){await dropNewAccount();AU.idToken='';CRED=null;return fail('كلمة المرور غير صحيحة')}
+  if(!CRED)CRED={username:u,pass:p,gen:num(usr.fbGen)};
+  LOGIN_BUSY=false;loginBtn(false);
   S.logins.unshift({id:uid(),ts:nowISO(),username:u,ok:true,why:''});
   const rem=document.getElementById('lgrem');
   try{ if(rem&&rem.checked)localStorage.setItem('wh_remember',u); else localStorage.removeItem('wh_remember'); }catch(e){}
+  /* الحساب القديم بكلمة مرور نصية: حوّله إلى تجزئة واطلب تغييرها */
+  if(usr.pass!=null&&!(usr.ph&&usr.ph.hash)&&!isReadOnlyFor(cloud,cloudOk))await setUserPass(usr,p,true);
   ses=usr; route='dash'; logIt('تسجيل دخول','مستخدم',usr.username); runAlerts(); draftLoad(); save(); render();
-  if(fbOn()&&fbCfg().auth){
-    AU.tried=false;
-    fbSignIn(usr.username,usr.pass).then(ok=>{
-      AU.tried=true;
-      if(!ok&&AU.err)toast('تعذّر توثيق الحساب في السحابة: '+AU.err,'dan');
-      render();startSync();
-    });
-  } else startSync();
+  if(cloud&&!cloudOk&&AU.err)toast('تعذّر توثيق الحساب في السحابة: '+AU.err,'dan');
+  if(cloudOk&&(usr.role==='admin'||usr.role==='manager')){
+    const n=await migratePasswords();
+    const okM=await syncMembers(true);
+    if(n)toast('حُوّلت '+n+' كلمة مرور إلى تجزئة آمنة','ok');
+    if(!okM)toast('تعذّر تحديث قائمة أعضاء المخزن في السحابة','dan');
+  }
   startSync();
+  if(usr.mustChange)forcePassModal();
 }
-function doRegister(){
+/* حساب سحابي أُنشئ للتو بكلمة مرور لم يثبت صحتها: يُحذف فورًا حتى لا يبقى بكلمة مرور خاطئة */
+async function dropNewAccount(){
+  if(!AU.created||!AU.idToken)return;
+  try{await idtPost('delete',{idToken:AU.idToken})}catch(e){}
+  AU.created=false;AU.idToken='';AU.refresh='';
+}
+function isReadOnlyFor(cloud,cloudOk){return !!(cloud&&fbCfg().requireAuth&&!cloudOk)}
+function loginBtn(busy){
+  const b=document.querySelector('.lgbtn');
+  if(b){b.disabled=busy;b.textContent=busy?'جارٍ الدخول…':'تسجيل الدخول'}
+}
+/* تغيير إلزامي لكلمة المرور (كانت مكشوفة أو عيّنتها الإدارة) */
+function forcePassModal(){
+  if(!ses||isActing())return;
+  forceModal(`<div class="modal sm"><div class="mh"><h3>&#128274; غيّر كلمة المرور قبل المتابعة</h3></div>
+  <div class="mb"><div class="note dan">كلمة مرورك الحالية كانت محفوظة بطريقة غير آمنة أو عيّنتها الإدارة،
+    لذلك يلزم تغييرها الآن. تُحفظ الكلمة الجديدة مُجزّأة ولا يمكن لأحد قراءتها.</div>
+    <div class="field" style="margin-top:12px"><label>كلمة المرور الجديدة (6 أحرف على الأقل)</label><input id="fp_n" type="password"></div>
+    <div class="field"><label>تأكيد كلمة المرور الجديدة</label><input id="fp_n2" type="password"
+      onkeydown="if(event.key==='Enter')saveForcedPass()"></div></div>
+  <div class="mf"><button class="btn gold" onclick="saveForcedPass()">حفظ كلمة المرور</button>
+  <button class="btn ghost" onclick="closeModal(true);logoutNow()">خروج</button></div></div>`);
+}
+/* نافذة لا تُغلق بالنقر خارجها */
+function forceModal(html){
+  const r=document.getElementById('modalRoot');
+  r.innerHTML='<div class="ov" data-force="1">'+html+'</div>';arabize(r);
+}
+async function saveForcedPass(){
+  const n=document.getElementById('fp_n').value,n2=document.getElementById('fp_n2').value;
+  if(n.length<6)return toast('كلمة المرور الجديدة 6 أحرف على الأقل','dan');
+  if(n!==n2)return toast('تأكيد كلمة المرور غير مطابق','dan');
+  if(CRED&&n===CRED.pass)return toast('اختر كلمة مرور مختلفة عن الحالية','dan');
+  if(await changeOwnPass(n)){closeModal(true);toast('حُدّثت كلمة المرور','ok')}
+}
+/* يغيّر كلمة مرور السحابة أولًا، ثم التجزئة في النظام — حتى لا تختلفا */
+async function changeOwnPass(n){
+  const me=S.users.find(x=>x.id===ses.id)||ses;
+  const cloud=fbOn()&&fbCfg().auth;
+  if(cloud){
+    if(!authed()){toast('لا يمكن تغيير كلمة المرور قبل اكتمال الاتصال بالسحابة','dan');return false}
+    if(!(await fbUpdatePassword(n))){toast('لم تُحدَّث كلمة المرور في السحابة: '+authMsg(AU.err),'dan');return false}
+  }
+  await setUserPass(me,n,false);
+  if(CRED)CRED.pass=n;
+  ses=me;logIt('تغيير كلمة المرور','مستخدم',me.username,'','تم');
+  save();if(cloud)await cloudPush(true);
+  return true;
+}
+function logoutNow(){
+  AU={idToken:'',refresh:'',exp:0,email:'',err:'',uid:'',tried:false,bypass:false,code:'',needRelogin:false,reloginShown:false};
+  clearInterval(SY.timer);REALME=null;CRED=null;MEMBERS_SIG='';
+  if(ses)logIt('تسجيل خروج','مستخدم',ses.username);save();ses=null;authTab='login';renderAuth();
+}
+async function doRegister(){
   const n=document.getElementById('rn').value.trim(),p=document.getElementById('rp').value.trim(),
         u=document.getElementById('ru').value.trim(),w=document.getElementById('rw').value;
   let c=document.getElementById('rc').value;
@@ -1045,7 +1137,9 @@ function doRegister(){
   if(S.users.some(x=>x.username===u))return toast('اسم المستخدم مستخدم مسبقًا، اختر غيره','dan');
   if(!c||c==='__new'||!S.clubs.some(x=>x.id===c))
     return toast('اختر ناديك من القائمة — إضافة نادٍ جديد من صلاحية الإدارة، تواصل مع المشرف','dan');
-  S.users.push({id:uid(),fullName:n,username:u,pass:w,role:'club',clubId:c,phone:p,status:'pending',createdAt:nowISO()});
+  const nu={id:uid(),fullName:n,username:u,role:'club',clubId:c,phone:p,status:'pending',createdAt:nowISO()};
+  nu.ph=await hashPass(w);nu.phAt=nowISO();
+  S.users.push(nu);
   notify('طلب تسجيل جديد من '+n+' — '+clubName(c),'manager');
   notify('طلب تسجيل جديد من '+n+' — '+clubName(c),'keeper');
   save();
@@ -1078,25 +1172,17 @@ function myPassModal(){
   <div class="mf"><button class="btn gold" onclick="saveMyPass()">حفظ</button>
   <button class="btn ghost" onclick="closeModal()">إلغاء</button></div></div>`);
 }
-function saveMyPass(){
+async function saveMyPass(){
   const o=document.getElementById('p_old').value,n=document.getElementById('p_new').value,
         n2=document.getElementById('p_new2').value;
-  if(o!==ses.pass)return toast('كلمة المرور الحالية غير صحيحة','dan');
+  if(!(await checkPass(S.users.find(x=>x.id===ses.id)||ses,o)))return toast('كلمة المرور الحالية غير صحيحة','dan');
   if(n.length<6)return toast('كلمة المرور الجديدة 6 أحرف على الأقل','dan');
   if(n!==n2)return toast('تأكيد كلمة المرور غير مطابق','dan');
-  ses.pass=n;logIt('تغيير كلمة المرور','مستخدم',ses.username,'','تم');
-  if(fbOn()&&fbCfg().auth)fbUpdatePassword(n).then(ok=>{
-    if(!ok&&AU.err)toast('لم تُحدَّث كلمة المرور في السحابة: '+AU.err,'dan')});
-  fbUpdatePassword(n).then(ok=>{if(!ok&&fbCfg().auth&&AU.err)toast('لم تُحدَّث كلمة المرور في السحابة: '+AU.err,'dan')});
-  save();closeModal();toast('حُدّثت كلمة المرور','ok');
+  if(await changeOwnPass(n)){closeModal();toast('حُدّثت كلمة المرور','ok')}
 }
 function logout(){
   if(isActing())return backToSelf();
-  confirmBox('تسجيل الخروج','هل تريد الخروج من النظام؟',()=>{
-    AU={idToken:'',refresh:'',exp:0,email:'',err:'',uid:'',tried:false,bypass:false};
-    clearInterval(SY.timer);REALME=null;
-    logIt('تسجيل خروج','مستخدم',ses.username);save();ses=null;authTab='login';renderAuth();
-  },'dan');
+  confirmBox('تسجيل الخروج','هل تريد الخروج من النظام؟',()=>logoutNow(),'dan');
 }
 
 /* ================= الهيكل ================= */
@@ -5111,10 +5197,13 @@ function resetPass(id,reqId){
   <div class="mf"><button class="btn gold" onclick="doReset('${id}','${reqId||''}')">حفظ</button>
   <button class="btn ghost" onclick="closeModal()">إلغاء</button></div></div>`);
 }
-function doReset(id,reqId){
+async function doReset(id,reqId){
   const u=S.users.find(x=>x.id===id),p=document.getElementById('np').value;
   if(p.length<6)return toast('كلمة المرور 6 أحرف على الأقل','dan');
-  u.pass=p;
+  if(u.id===(REALME||ses).id)return toast('لتغيير كلمة مرورك استخدم «تغيير كلمة المرور» من قائمتك','dan');
+  /* حساب سحابي جديد بالجيل التالي، لأن تغيير كلمة مرور حساب Firebase لمستخدم آخر غير ممكن من المتصفح */
+  u.fbGen=num(u.fbGen)+1;
+  await setUserPass(u,p,true);
   if(reqId){const r=S.resets.find(x=>x.id===reqId);if(r)r.status='done'}
   logIt('إعادة تعيين كلمة مرور','مستخدم',u.username,'','تم');
   save();closeModal();renderPage();toast('حُدّثت كلمة المرور','ok');
@@ -5130,12 +5219,13 @@ function userForm(id){
       ${Object.keys(ROLES).map(k=>`<option value="${k}" ${u&&u.role===k?'selected':''}>${ROLES[k]}</option>`).join('')}</select></div>
     <div class="field" id="u_cwrap" style="display:${!u||u.role==='club'?'block':'none'}"><label>النادي</label>
       <select id="u_c">${S.clubs.map(c=>`<option value="${c.id}" ${u&&u.clubId===c.id?'selected':''}>${h(c.name)}</option>`).join('')}</select></div>
-    ${u?'':`<div class="field"><label>كلمة المرور</label><input id="u_w" type="text" value="123456"></div>`}
+    ${u?'':`<div class="field"><label>كلمة المرور</label><input id="u_w" type="text" value="${Math.random().toString(36).slice(2,10)}">
+      <div class="hint">سلّمها للمستخدم؛ سيُطلب منه تغييرها عند أول دخول.</div></div>`}
   </div></div>
   <div class="mf"><button class="btn gold" onclick="saveUser('${id||''}')">حفظ</button>
   <button class="btn ghost" onclick="closeModal()">إلغاء</button></div></div>`);
 }
-function saveUser(id){
+async function saveUser(id){
   const g=x=>document.getElementById(x).value;
   const n=g('u_n').trim(),un=g('u_u').trim(),r=g('u_r');
   if(!n||!un)return toast('أكمل الاسم واسم المستخدم','dan');
@@ -5145,8 +5235,12 @@ function saveUser(id){
     Object.assign(u,{fullName:n,username:un,phone:g('u_p'),role:r,clubId:r==='club'?g('u_c'):null});
     logIt('تعديل صلاحيات','مستخدم',un,ROLES[before],ROLES[r]);
   }else{
-    S.users.push({id:uid(),fullName:n,username:un,pass:g('u_w'),role:r,clubId:r==='club'?g('u_c'):null,
-      phone:g('u_p'),status:'approved',createdAt:nowISO()});
+    const pw=g('u_w');
+    if(pw.length<6)return toast('كلمة المرور 6 أحرف على الأقل','dan');
+    const nu={id:uid(),fullName:n,username:un,role:r,clubId:r==='club'?g('u_c'):null,
+      phone:g('u_p'),status:'approved',createdAt:nowISO()};
+    await setUserPass(nu,pw,true);
+    S.users.push(nu);
     logIt('إنشاء مستخدم','مستخدم',un,'',ROLES[r]);
   }
   save();closeModal();renderPage();toast('حُفظ المستخدم','ok');
@@ -5542,7 +5636,7 @@ async function testAuth(){
   if(!fbOn())return toast('المزامنة متوقفة','dan');
   if(!fbCfg().auth)return toast('المصادقة متوقفة من الإعدادات','dan');
   toast('جارٍ اختبار المصادقة…');
-  const ok=await fbSignIn(ses.username,ses.pass);
+  const ok=!!CRED&&await fbSignIn(CRED.username,CRED.pass,CRED.gen);
   renderPage();
   toast(ok?('تمت المصادقة باسم '+AU.email):('فشلت المصادقة: '+AU.err),ok?'ok':'dan');
 }
@@ -6878,7 +6972,7 @@ document.addEventListener('keydown',e=>{
 });
 
 /* ================= المزامنة السحابية (Firestore REST) ================= */
-let SY={state:'idle',last:null,err:'',busy:false,timer:null,pushT:null};
+let SY={state:'idle',last:null,err:'',busy:false,timer:null,pushT:null,lastStatus:0,dirty:false};
 function fbCfg(){return (S.settings&&S.settings.fb)||{}}
 function fbOn(){const c=fbCfg();return !!(c.enabled&&c.apiKey&&c.projectId&&typeof fetch==='function')}
 function fbUrl(){
@@ -6886,12 +6980,13 @@ function fbUrl(){
   return 'https://firestore.googleapis.com/v1/projects/'+c.projectId+
     '/databases/(default)/documents/'+(c.doc||'warehouse/state')+'?key='+encodeURIComponent(c.apiKey);
 }
-let AU={idToken:'',refresh:'',exp:0,email:'',err:'',uid:'',tried:false,bypass:false};
+let AU={idToken:'',refresh:'',exp:0,email:'',err:'',uid:'',tried:false,bypass:false,code:'',needRelogin:false,reloginShown:false};
 function authRequired(){return !!(fbOn()&&fbCfg().auth&&fbCfg().requireAuth)}
 function authed(){return !!AU.idToken}
 function isReadOnly(){
   if(!ses||AU.bypass)return false;
   if(!authRequired())return false;
+  if(AU.needRelogin)return false;   /* رُفضت الصلاحية أثناء العمل: يستمر الحفظ محليًا حتى إعادة الدخول */
   return AU.tried&&!authed();   /* لا نمنع أثناء محاولة التوثيق، بل بعد فشلها */
 }
 function roBanner(){
@@ -6909,7 +7004,8 @@ async function retryAuth(){
   if(!ses)return;
   toast('جارٍ توثيق الحساب…');
   AU.tried=true;
-  const ok=await fbSignIn(ses.username,ses.pass);
+  const ok=!!CRED&&await fbSignIn(CRED.username,CRED.pass,CRED.gen);
+  if(ok){await cloudPush(true);if(canManageMembers())syncMembers(true)}
   render();
   toast(ok?('تم التوثيق باسم '+AU.email):('تعذّر التوثيق: '+AU.err),ok?'ok':'dan');
 }
@@ -6921,7 +7017,81 @@ function bypassRO(){
     AU.bypass=true;render();toast('تفعيل التعديل المحلي — المزامنة موقوفة','ok');
   },'dan');
 }
-function fbEmail(username){return String(username||'').trim().toLowerCase()+'@'+(fbCfg().domain||'droub.local')}
+/* بريد Firebase لاتيني ثابت: 'u' + hex(اسم المستخدم بترميز UTF-8) + '@droub.local'
+   بعد إعادة تعيين كلمة المرور من الإدارة يُضاف رقم جيل (g1, g2…) فينشأ حساب سحابي جديد بكلمة المرور الجديدة */
+function hexStr(s){
+  return Array.from(new TextEncoder().encode(String(s||'').trim().toLowerCase()),b=>b.toString(16).padStart(2,'0')).join('');
+}
+function fnv32(s){let x=0x811c9dc5;for(let i=0;i<s.length;i++){x^=s.charCodeAt(i);x=Math.imul(x,0x01000193)>>>0}return x.toString(16).padStart(8,'0')}
+function fbEmail(username,gen){
+  let hx=hexStr(username);
+  if(hx.length>54)hx=hx.slice(0,40)+'x'+fnv32(hx);   /* الجزء قبل @ لا يتجاوز 64 حرفًا */
+  const g=num(gen);
+  return 'u'+hx+(g>0?'g'+g:'')+'@'+(fbCfg().domain||'droub.local');
+}
+function userEmail(u){return fbEmail(u.username,u.fbGen)}
+/* ===== تجزئة كلمات المرور (PBKDF2-SHA256 مع salt) — لا تُحفظ كلمة المرور نصًا ===== */
+const PH_IT=120000;
+function b64(buf){let s='';new Uint8Array(buf).forEach(b=>{s+=String.fromCharCode(b)});return btoa(s)}
+function unb64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0))}
+async function hashPass(p,salt,it){
+  salt=salt||crypto.getRandomValues(new Uint8Array(16));it=it||PH_IT;
+  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(String(p)),'PBKDF2',false,['deriveBits']);
+  const bits=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt,iterations:it},key,256);
+  return {alg:'pbkdf2-sha256',it,salt:b64(salt),hash:b64(bits)};
+}
+async function checkPass(u,p){
+  if(!u)return false;
+  if(u.ph&&u.ph.hash&&u.ph.salt){
+    try{const x=await hashPass(p,unb64(u.ph.salt),u.ph.it);return x.hash===u.ph.hash}catch(e){return false}
+  }
+  if(u.pass!=null)return String(u.pass)===String(p);   /* حساب قديم لم يُحوَّل بعد */
+  return false;
+}
+async function setUserPass(u,p,mustChange){
+  u.ph=await hashPass(p);u.phAt=nowISO();delete u.pass;u.mustChange=!!mustChange;
+}
+/* كلمة مرور الجلسة تبقى في الذاكرة فقط (لتجديد رمز الدخول) ولا تُحفظ في أي مكان */
+let CRED=null;
+async function migratePasswords(){
+  const list=S.users.filter(u=>u.pass!=null&&!(u.ph&&u.ph.hash));
+  for(const u of list){await setUserPass(u,u.pass,true)}
+  S.users.forEach(u=>{if(u.ph&&u.ph.hash&&'pass' in u)delete u.pass});
+  if(list.length){
+    logIt('تحويل كلمات المرور إلى تجزئة','نظام','',list.length+' حساب','حُذفت النصوص الصريحة وطُلب تغييرها عند أول دخول');
+    save();
+  }
+  return list.length;
+}
+/* قائمة أعضاء المخزن warehouseAccess/members — المستخدمون المعتمدون فقط */
+let MEMBERS_SIG='';
+function memberEmails(){
+  return [...new Set(S.users.filter(u=>u.status==='approved'&&u.username).map(userEmail))].sort();
+}
+function canManageMembers(){const me=REALME||ses;return !!(me&&(me.role==='admin'||me.role==='manager'))}
+async function syncMembers(force){
+  if(!fbOn()||!fbCfg().auth||!authed()||!canManageMembers())return false;
+  const emails=memberEmails(),sig=emails.join('|');
+  if(!force&&sig===MEMBERS_SIG)return true;
+  const me=REALME||ses;
+  if(!emails.length||!emails.includes(userEmail(me)))return false;   /* لا تكتب قائمة تُخرج المدير نفسه */
+  const c=fbCfg();
+  const url='https://firestore.googleapis.com/v1/projects/'+c.projectId+
+    '/databases/(default)/documents/warehouseAccess/members?key='+encodeURIComponent(c.apiKey);
+  const body={fields:{emails:{arrayValue:{values:emails.map(e=>({stringValue:e}))}},
+    count:{integerValue:String(emails.length)},updatedAt:{stringValue:nowISO()},updatedBy:{stringValue:me.fullName||''}}};
+  try{
+    const r=await fbFetch(url,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok)throw new Error('رمز '+r.status);
+    MEMBERS_SIG=sig;return true;
+  }catch(e){console.warn('members',e);return false}
+}
+let MEMBERS_T=null;
+function scheduleMembers(){
+  if(!canManageMembers()||!authed())return;
+  if(memberEmails().join('|')===MEMBERS_SIG)return;
+  clearTimeout(MEMBERS_T);MEMBERS_T=setTimeout(()=>syncMembers(),1500);
+}
 async function idtPost(path,body){
   const r=await fetch('https://identitytoolkit.googleapis.com/v1/accounts:'+path+'?key='+encodeURIComponent(fbCfg().apiKey),
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -6948,18 +7118,28 @@ function authMsg(code){
   const k=Object.keys(m).find(x=>String(code).indexOf(x)===0);
   return k?m[k]:String(code);
 }
-async function fbSignIn(username,pass){
+/* الدخول إلى Firebase، وإنشاء الحساب تلقائيًا عند أول دخول.
+   AU.code: '' نجح، 'bad' كلمة المرور لا تطابق حساب السحابة، 'err' خطأ آخر (شبكة/إعدادات) */
+async function fbSignIn(username,pass,gen,noCreate){
   if(!fbOn()||!fbCfg().auth)return false;
-  const email=fbEmail(username),password=String(pass||'');
+  const email=fbEmail(username,gen),password=String(pass||'');
+  AU.code='err';AU.created=false;
   if(password.length<6){AU.err='كلمة المرور أقل من 6 أحرف، لا تقبلها مصادقة Firebase';return false}
   try{
     setTok(await idtPost('signInWithPassword',{email,password,returnSecureToken:true}),email);
-    return true;
+    AU.code='';return true;
   }catch(e){
     const m=String(e.message||'');
-    if(/EMAIL_NOT_FOUND|USER_NOT_FOUND/.test(m)){
-      try{setTok(await idtPost('signUp',{email,password,returnSecureToken:true}),email);return true}
-      catch(e2){AU.err=authMsg(e2.message||e2);return false}
+    /* مع حماية تعداد البريد يعيد Firebase INVALID_LOGIN_CREDENTIALS للحساب غير الموجود أيضًا، فنجرّب الإنشاء */
+    if(/EMAIL_NOT_FOUND|USER_NOT_FOUND|INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD/.test(m)){
+      if(noCreate){AU.code='bad';AU.err=authMsg('INVALID_PASSWORD');return false}
+      try{setTok(await idtPost('signUp',{email,password,returnSecureToken:true}),email);AU.code='';AU.created=true;return true}
+      catch(e2){
+        const m2=String(e2.message||e2);
+        if(/EMAIL_EXISTS/.test(m2)){AU.code='bad';AU.err=authMsg('INVALID_PASSWORD')}
+        else AU.err=authMsg(m2);
+        return false;
+      }
     }
     AU.err=authMsg(m);return false;
   }
@@ -6976,8 +7156,54 @@ async function fbToken(){
       if(r.ok){AU.idToken=j.id_token;AU.refresh=j.refresh_token;AU.exp=Date.now()+((num(j.expires_in)||3600)-60)*1000;return AU.idToken}
     }catch(e){}
   }
-  if(ses&&ses.pass&&await fbSignIn(ses.username,ses.pass))return AU.idToken;
+  if(CRED&&await fbSignIn(CRED.username,CRED.pass,CRED.gen))return AU.idToken;
   return '';
+}
+/* كل طلب إلى Firestore يحمل رمز الدخول؛ عند الرفض (401/403) يُجدَّد الرمز مرة، ثم يُطلب الدخول من جديد */
+async function fbFetch(url,init){
+  init=init||{};
+  const go=async()=>fetch(url,Object.assign({},init,{headers:await fbHeaders(init.headers)}));
+  let r=await go();
+  if((r.status===401||r.status===403)&&fbCfg().auth&&(CRED||AU.refresh)){
+    AU.idToken='';AU.exp=0;
+    if(await fbToken())r=await go();
+  }
+  SY.lastStatus=r.status;
+  if((r.status===401||r.status===403)&&ses)askRelogin();
+  else if(r.ok&&AU.needRelogin){AU.needRelogin=false}
+  return r;
+}
+function askRelogin(){
+  if(!ses)return;
+  AU.needRelogin=true;
+  setSync('err','رفضت السحابة الصلاحية — بياناتك محفوظة على هذا الجهاز وتُرفع بعد الدخول');
+  if(AU.reloginShown)return;
+  AU.reloginShown=true;
+  const me=REALME||ses;
+  modal(`<div class="modal sm"><div class="mh"><h3>&#128274; أعد تسجيل الدخول</h3><button onclick="closeModal()">&times;</button></div>
+  <div class="mb"><div class="note dan">رفضت السحابة الوصول إلى بيانات المخزن (انتهت الجلسة أو تغيّرت الصلاحية).
+    <b>لم يُفقد شيء:</b> تغييراتك محفوظة على هذا الجهاز، وتُرفع تلقائيًا بعد إعادة الدخول.</div>
+    <div class="field" style="margin-top:12px"><label>كلمة المرور — ${h(me.username)}</label>
+      <input id="rl_p" type="password" onkeydown="if(event.key==='Enter')doRelogin()"></div>
+    <div id="rl_msg" style="color:var(--dan);font-size:13px"></div></div>
+  <div class="mf"><button class="btn gold" onclick="doRelogin()">دخول</button>
+  <button class="btn ghost" onclick="closeModal()">لاحقًا</button></div></div>`);
+}
+async function doRelogin(){
+  const me=REALME||ses; if(!me)return;
+  const p=(document.getElementById('rl_p')||{}).value||'';
+  const msg=t=>{const e=document.getElementById('rl_msg');if(e)e.textContent=t};
+  if(!(await checkPass(S.users.find(x=>x.id===me.id)||me,p)))return msg('كلمة المرور غير صحيحة');
+  msg('جارٍ الدخول…');
+  const gen=num((S.users.find(x=>x.id===me.id)||me).fbGen);
+  if(!(await fbSignIn(me.username,p,gen)))return msg('تعذّر الدخول إلى السحابة: '+AU.err);
+  CRED={username:me.username,pass:p,gen};
+  AU.tried=true;
+  const ok=await cloudPush(true);   /* ارفع التغييرات المحلية أولًا ثم اقرأ الأحدث */
+  if(!ok&&(SY.lastStatus===403||SY.lastStatus===401))
+    return msg('دخلت بنجاح، لكن حسابك غير مُدرج في قائمة أعضاء المخزن — راجع مدير النظام');
+  AU.needRelogin=false;AU.reloginShown=false;
+  closeModal();await cloudPull(true);render();toast('عاد الاتصال بالسحابة واكتملت المزامنة','ok');
 }
 async function fbHeaders(base){
   const hd=Object.assign({},base||{});
@@ -6986,8 +7212,9 @@ async function fbHeaders(base){
   return hd;
 }
 async function fbUpdatePassword(newPass){
-  if(!fbOn()||!fbCfg().auth||!AU.idToken)return false;
-  try{setTok(await idtPost('update',{idToken:AU.idToken,password:String(newPass),returnSecureToken:true}));return true}
+  if(!fbOn()||!fbCfg().auth)return false;
+  const tk=await fbToken(); if(!tk){AU.err=AU.err||'لا يوجد رمز دخول';return false}
+  try{setTok(await idtPost('update',{idToken:tk,password:String(newPass),returnSecureToken:true}));return true}
   catch(e){AU.err=String(e.message||e);return false}
 }
 function syncChip(){
@@ -7043,6 +7270,18 @@ function mergeStates(local,remote,preferRemote){
     if(tk&&base.tomb[tk])arr=arr.filter(x=>!base.tomb[tk][x.id]);
     base[k]=arr;
   });
+  /* كلمات المرور: تُعتمد أحدث تجزئة من أي نسخة، ولا يعود النص الصريح أبدًا من نسخة قديمة */
+  (function(){
+    const lu=new Map((local.users||[]).map(u=>[u.id,u])),ru=new Map((remote.users||[]).map(u=>[u.id,u]));
+    base.users=(base.users||[]).map(u=>{
+      const a=lu.get(u.id),b=ru.get(u.id);
+      const c=[a,b].filter(x=>x&&x.ph&&x.ph.hash).sort((x,y)=>String(y.phAt||'').localeCompare(String(x.phAt||'')));
+      if(!c.length)return u;
+      const o=Object.assign({},u,{ph:c[0].ph,phAt:c[0].phAt,mustChange:!!c[0].mustChange,
+        fbGen:Math.max(num(a&&a.fbGen),num(b&&b.fbGen))});
+      delete o.pass;return o;
+    });
+  })();
   base.seq={};
   [local.seq||{},remote.seq||{}].forEach(sq=>Object.keys(sq).forEach(pfx=>{
     base.seq[pfx]=base.seq[pfx]||{};
@@ -7065,18 +7304,21 @@ function applyRemote(obj){
   }
   try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
 }
-async function cloudPull(silent){
-  if(!fbOn()||SY.busy)return false;
+async function waitIdle(ms){const t=Date.now();while(SY.busy&&Date.now()-t<(ms||15000))await new Promise(r=>setTimeout(r,150))}
+async function cloudPull(silent,force){
+  if(!fbOn())return false;
+  if(force)await waitIdle();
+  if(SY.busy)return false;
   SY.busy=true;setSync('pull');
   try{
-    const r=await fetch(fbUrl(),{headers:await fbHeaders()});
-    if(r.status===404){SY.busy=false;setSync('ok');return await cloudPush(true)}
-    if(!r.ok)throw new Error('رمز '+r.status);
+    const r=await fbFetch(fbUrl());
+    if(r.status===404){SY.busy=false;setSync('ok');return ses?await cloudPush(true):false}
+    if(!r.ok)throw new Error(r.status===403||r.status===401?'رمز '+r.status+' — لا صلاحية (سجّل الدخول)':'رمز '+r.status);
     const j=await r.json();
     const f=(j.fields||{});
     const rev=parseInt((f.rev&&f.rev.integerValue)||'0',10);
     const data=(f.data&&f.data.stringValue)||'';
-    if(data&&(rev>(S.rev||0)||S.__fresh)){
+    if(data&&(rev>(S.rev||0)||S.__fresh||force)){
       const remote=JSON.parse(data);
       /* جهاز جديد بلا بيانات: خذ نسخة السحابة كاملة بدل دمج بذرة محلية تُكرّر الأصناف */
       const obj=S.__fresh?remote:mergeStates(S,remote,true);
@@ -7101,7 +7343,8 @@ async function cloudPush(force){
   try{
     /* اقرأ الأحدث أولًا وادمج تغييراتك فوقه حتى لا تُمحى بيانات جهاز آخر */
     try{
-      const rr=await fetch(fbUrl(),{headers:await fbHeaders()});
+      const rr=await fbFetch(fbUrl());
+      if(rr.status===401||rr.status===403)throw new Error('deny');
       if(rr.ok){
         const jj=await rr.json();
         const ff=(jj.fields||{});
@@ -7113,21 +7356,22 @@ async function cloudPush(force){
           S=merged;
         }
       }
-    }catch(e){}
+    }catch(e){if(String(e.message)==='deny')throw new Error('رمز '+SY.lastStatus+' — رفضت السحابة الصلاحية، بياناتك محفوظة محليًا')}
     S.rev=(S.rev||0)+1;
     const body={fields:{data:{stringValue:packState()},rev:{integerValue:String(S.rev)},
       updatedAt:{stringValue:nowISO()},updatedBy:{stringValue:ses?ses.fullName:'—'}}};
-    const r=await fetch(fbUrl(),{method:'PATCH',
-      headers:await fbHeaders({'Content-Type':'application/json'}),body:JSON.stringify(body)});
+    const r=await fbFetch(fbUrl(),{method:'PATCH',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     if(!r.ok){const t=await r.text();throw new Error('رمز '+r.status+' '+String(t).slice(0,80))}
     try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}
-    SY.busy=false;setSync('ok');return true;
+    SY.dirty=false;SY.busy=false;setSync('ok');return true;
   }catch(e){SY.busy=false;setSync('err',String(e.message||e));return false}
 }
 function schedulePush(){
   if(!fbOn())return;
   /* جهاز جديد: لا ترفع البذرة المحلية قبل قراءة السحابة، وإلا تكررت الأصناف */
   if(S.__fresh)return;
+  SY.dirty=true;
   clearTimeout(SY.pushT);
   SY.pushT=setTimeout(()=>cloudPush(),1200);
 }
@@ -7136,7 +7380,12 @@ function startSync(){
   if(!fbOn())return;
   cloudPull(true);
   const sec=Math.max(5,num(fbCfg().poll)||15);
-  SY.timer=setInterval(()=>{if(!SY.busy)cloudPull(true)},sec*1000);
+  SY.timer=setInterval(()=>{
+    if(SY.busy)return;
+    if(authRequired()&&!authed())return;          /* لا قراءة دون دخول */
+    if(SY.dirty&&ses&&!AU.needRelogin)cloudPush(); /* تغييرات لم تُرفع بعد: ارفعها قبل القراءة */
+    else cloudPull(true);
+  },sec*1000);
 }
 async function syncNow(){
   if(!fbOn())return toast('المزامنة متوقفة — فعّلها من الإعدادات','dan');
@@ -7169,6 +7418,8 @@ if(!S.quota)S.quota={};
 if(!S.noMerge)S.noMerge={};
 if(!S.tomb)S.tomb={};
 if(!S.ideas)S.ideas=[];
+/* لا يبقى نص كلمة مرور لحساب له تجزئة */
+S.users.forEach(u=>{if(u.ph&&u.ph.hash&&'pass' in u)delete u.pass});
 (function clubBibs(){
   S.imports=S.imports||{};
   if(S.imports.clubBibs)return;
