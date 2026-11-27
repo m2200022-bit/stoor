@@ -7295,6 +7295,10 @@ async function bkWrite(dir,interactive){
     const data=JSON.stringify(Object.assign({},S,{__backupAt:nowISO(),__by:(REALME||ses||{}).fullName||''}));
     const fh=await dir.getFileHandle(bkFileName(),{create:true});
     const w=await fh.createWritable();await w.write(new Blob([data],{type:'application/json'}));await w.close();
+    /* نسخة «الأحدث» دائمًا بنفس الاسم + الاحتفاظ بآخر 30 نسخة يومية فقط */
+    try{const lf=await dir.getFileHandle('نسخة-المخزن-الأحدث.json',{create:true});const lw=await lf.createWritable();await lw.write(new Blob([data],{type:'application/json'}));await lw.close();}catch(e){}
+    try{const old=[];for await(const [n,hd] of dir.entries()){if(hd.kind==='file'&&/^نسخة-المخزن-\d{4}-\d{2}-\d{2}\.json$/.test(n))old.push(n)}
+      old.sort().reverse().slice(30).forEach(n=>dir.removeEntry(n).catch(()=>{}));}catch(e){}
     const at=nowISO();try{localStorage.setItem(BK_LAST,JSON.stringify({at,dir:dir.name,file:bkFileName()}))}catch(e){}
     toast('تم تحديث النسخة الاحتياطية بتاريخ '+fmtDT(at),'ok');
     return 'ok';
@@ -7645,9 +7649,11 @@ function startSync(){
     if(SY.busy)return;
     if(authRequired()&&!authed())return;          /* لا قراءة دون دخول */
     if(SY.dirty&&ses&&!AU.needRelogin)cloudPush(); /* تغييرات لم تُرفع بعد: ارفعها قبل القراءة */
-    else cloudPull(true);
+    else if(!document.hidden)cloudPull(true);       /* تخفيف: لا قراءة من السحابة والصفحة مخفية */
   },sec*1000);
 }
+/* عند العودة إلى الصفحة: تحديث فوري بدل انتظار الدورة التالية */
+document.addEventListener('visibilitychange',()=>{try{if(!document.hidden&&fbOn()&&!SY.busy&&!(authRequired()&&!authed()))cloudPull(true)}catch(e){}});
 async function syncNow(){
   if(!fbOn())return toast('المزامنة متوقفة — فعّلها من الإعدادات','dan');
   toast('جارٍ المزامنة…');
